@@ -143,7 +143,7 @@ your machine is locked down, reasonable alternatives are:
 Found a bug, or a security concern with the scripts themselves?
 
 - **General bugs:** open an issue at
-  https://github.com/richarddeegan88/acsc-reading-toolkit/issues
+  https://github.com/RichardDeegan88/Extraction_Tool/issues
 - **Security-sensitive reports:** use GitHub's private vulnerability reporting
   (the **Security** tab -> *Report a vulnerability*) rather than a public issue,
   so it can be looked at before it's visible to everyone.
