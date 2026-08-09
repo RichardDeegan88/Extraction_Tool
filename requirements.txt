@@ -1,0 +1,31 @@
+# Python packages for the ACSC Reading Toolkit
+#
+#   pip install -r requirements.txt
+#
+# Both are optional in the strict sense — the scripts run without
+# them — but the toolkit is noticeably worse without both, and the
+# output header tells you when a fallback was used.
+
+# Reads PDF metadata (title/author) and embedded chapter outlines.
+# Without it: chapter indexes fall back to text-pattern matching,
+# which is less reliable, and no fallback text extractor is available
+# if pdftotext fails.
+# Upper bound guards against major-version API breaks; tested on 6.x.
+pypdf>=3.0.0,<7
+
+# Clean article text extraction for fetch_readings.py.
+# Without it: a crude built-in stripper is used, which leaves
+# navigation and sidebar clutter in fetched articles.
+# Upper bound guards against major-version API breaks; tested on 2.x.
+trafilatura>=1.6.0,<3
+
+# ---------------------------------------------------------------
+# NOT installable with pip — these are system tools.
+# See docs/SETUP.md.
+#
+#   poppler-utils   pdftotext, pdftoppm, pdfinfo   (required)
+#   tesseract-ocr   OCR for scanned pages          (required)
+#   imagemagick     deskew before OCR              (optional)
+#
+# Verify everything with:  python preprocess_pdf.py --check
+# ---------------------------------------------------------------

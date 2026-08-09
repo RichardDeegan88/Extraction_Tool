@@ -1,0 +1,13 @@
+# Normalise line endings so a Windows checkout can't break the shell launcher.
+# Without this, autocrlf turns run-me.sh into CRLF and it fails elsewhere with
+#   /bin/bash^M: bad interpreter
+* text=auto eol=lf
+
+# Force the correct ending per launcher regardless of platform.
+run-me.sh    text eol=lf
+RUN-ME.bat   text eol=crlf
+
+# Never touch binaries.
+*.pdf   binary
+*.png   binary
+*.jpg   binary

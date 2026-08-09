@@ -1,0 +1,80 @@
+# ============================================================
+#  CRITICAL: never commit extracted book text.
+#
+#  A .txt produced by this toolkit is the COMPLETE text of a
+#  copyrighted book. Committing one to a repository publishes
+#  it. That is infringement whether the repo is public or
+#  private, and whether or not everyone involved owns the book.
+#
+#  Share the tools. Never the corpus.
+# ============================================================
+
+# Extracted output
+extracted/
+web_readings/
+readings/
+*.txt
+*.txt.index
+*.index
+# Uppercase variants, for case-sensitive (Linux) filesystems
+*.TXT
+*.PDF
+*.INDEX
+_DUPLICATE_MAP.txt
+_MANIFEST.md
+MANUAL_CAPTURE.txt
+
+# Source documents
+*.pdf
+*.epub
+*.mobi
+*.azw3
+*.djvu
+downloaded_pdfs/
+
+# Logs and scratch
+*.log
+batch.log
+test/
+tmp/
+temp/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# Editors / OS / agents
+.vscode/
+.idea/
+.claude/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Google Drive for Desktop artifacts
+*.gdoc
+*.gsheet
+*.gslides
+
+# ------------------------------------------------------------
+# Exceptions: documentation IS tracked, despite *.txt above.
+# ------------------------------------------------------------
+!README.md
+!CLAUDE.md
+!LICENSE
+!requirements.txt
+!VERSION
+!docs/*.md
+!.gitignore
