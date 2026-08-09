@@ -1,16 +1,26 @@
 # ACSC Reading Toolkit
 
-Two scripts that solve a specific, expensive problem: **large PDF readings get
-truncated when you hand them to an AI assistant, and you often can't tell.**
+Two scripts for a specific, expensive problem in AI-assisted study: **the
+readings never fully reach the assistant — and it doesn't tell you.** Two ways
+that happens:
 
-Point an assistant at a 700-page scanned Clausewitz and it will read the first
-50 pages or so and then stop. It will not usually say it stopped. What comes
-back looks like a summary of the book. It is a summary of the first seven
-percent of the book.
+- **Large or scanned PDFs get truncated.** An assistant has a ceiling on how
+  much it can ingest at once; hand it a 700-page scanned Clausewitz and it
+  reads the first 50 pages or so, then stops — usually without saying so. What
+  comes back looks like a summary of the book. It is a summary of the first
+  seven percent of the book.
+- **Half your readings aren't PDFs.** A syllabus links out to articles — some
+  open, some paywalled behind an institutional login — that never get read
+  unless something fetches them first.
 
-These scripts extract the whole text on your own machine, verify the page count
-against the PDF's own count, and hand you a plain `.txt` file you can search,
-quote from, and feed to an assistant in targeted pieces.
+`preprocess_pdf.py` extracts the whole PDF on your own machine, verifies the
+page count against the PDF's own count, and hands you a plain `.txt` you can
+search, quote from, and feed to an assistant **in targeted pieces** instead of
+whole. `fetch_readings.py` pulls every reading link out of a syllabus and
+fetches what it can, routing paywalled ones to a manual-capture list rather
+than pretending it got them. Both tools are **honest about what they couldn't
+get** — OCR'd text is tagged, page-count gaps are flagged, paywalled readings
+are listed. The assistant's failure is silent; this isn't.
 
 Measured on the course's Howard/Paret *On War* (30 MB, 743 pages):
 
@@ -41,8 +51,8 @@ Measured on the course's Howard/Paret *On War* (30 MB, 743 pages):
 ## Quickstart
 
 ```
-git clone https://github.com/richarddeegan88/acsc-reading-toolkit.git
-cd acsc-reading-toolkit
+git clone https://github.com/RichardDeegan88/Extraction_Tool.git
+cd Extraction_Tool
 pip install -r requirements.txt
 python preprocess_pdf.py --check          # verify tools are installed
 python preprocess_pdf.py "path/to/books" --out-dir extracted
@@ -102,7 +112,7 @@ that is the single most common setup failure and the doc covers it.
 
 ## Version
 
-v1.0.0 — see `CHANGELOG.md` for release notes and known limits.
+v1.0.1 — see `CHANGELOG.md` for release notes and known limits.
 
 ---
 
