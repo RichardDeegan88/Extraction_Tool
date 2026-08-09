@@ -324,16 +324,36 @@ def looks_gated(text: str, word_count: int) -> str:
 # --------------------------------------------------------------------------
 # Sanitize invisible/bidi characters — fetched web pages are the only
 # attacker-influenced input here, and the output is destined for an assistant,
-# so strip the same hidden-character classes preprocess_pdf.py removes.
+# so strip exactly the hidden-character classes preprocess_pdf.py removes.
+#
+# This mirrors preprocess_pdf.py.sanitize() codepoint-for-codepoint. It used to
+# be a regex character class, which had silently drifted out of sync — it missed
+# U+034F, U+061C, U+180E and the Hangul fillers (U+115F/U+1160/U+3164/U+FFA0)
+# that the sibling strips, while over-matching a few deprecated ranges it does
+# not. An explicit codepoint set keeps the two provably in lockstep.
 # --------------------------------------------------------------------------
 
-_HIDDEN_CHARS_RE = re.compile(
-    "[­​-‏‪-‮⁠-⁤⁦-⁯"
-    "﻿￹-￻󠀀-󠁿]")
+_ZERO_WIDTH_CODEPOINTS = frozenset({
+    0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0x00AD, 0x034F, 0x180E,
+    0x2061, 0x2062, 0x2063, 0x2064,
+})
+_BIDI_CONTROL_CODEPOINTS = frozenset({
+    0x200E, 0x200F, 0x061C, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+    0x2066, 0x2067, 0x2068, 0x2069,
+})
+_INVISIBLE_LETTER_CODEPOINTS = frozenset({0x115F, 0x1160, 0x3164, 0xFFA0})
+_INVISIBLE_CODEPOINTS = (
+    _ZERO_WIDTH_CODEPOINTS | _BIDI_CONTROL_CODEPOINTS | _INVISIBLE_LETTER_CODEPOINTS
+)
+_TAG_BLOCK_START, _TAG_BLOCK_END = 0xE0000, 0xE007F
 
 
 def strip_hidden(s: str) -> str:
-    return _HIDDEN_CHARS_RE.sub("", s)
+    return "".join(
+        ch for ch in s
+        if ord(ch) not in _INVISIBLE_CODEPOINTS
+        and not (_TAG_BLOCK_START <= ord(ch) <= _TAG_BLOCK_END)
+    )
 
 
 # --------------------------------------------------------------------------
@@ -485,9 +505,16 @@ def main() -> None:
 
     # ---- articles --------------------------------------------------------
     for page, url in buckets["article"]:
-        target = out_dir / (safe_filename(url) + ".txt")
-        if target.exists() and not args.overwrite:
-            print(f"  skip (exists): {target.name}", file=sys.stderr)
+        stem = safe_filename(url)
+        target = out_dir / (stem + ".txt")
+        # An "article" URL can turn out to serve a PDF (publisher landing pages
+        # do this). That produces a .pdf, never the .txt, so checking only the
+        # .txt would re-fetch and overwrite that PDF on every run. Skip if
+        # either output already exists.
+        pdf_target = pdf_dir / (stem + ".pdf")
+        if not args.overwrite and (target.exists() or pdf_target.exists()):
+            existing = target if target.exists() else pdf_target
+            print(f"  skip (exists): {existing.name}", file=sys.stderr)
             continue
         print(f"  fetching: {url[:70]}...", file=sys.stderr)
         body, ctype, err = fetch_url(url, args.timeout)
@@ -497,7 +524,6 @@ def main() -> None:
             continue
         if body.startswith(b"%PDF"):
             pdf_dir.mkdir(exist_ok=True)
-            pdf_target = pdf_dir / (safe_filename(url) + ".pdf")
             pdf_target.write_bytes(body)
             fetched.append(str(pdf_target))
             continue

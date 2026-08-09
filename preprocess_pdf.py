@@ -143,12 +143,15 @@ def extract_pages_pdftotext(pdf_path: str, total_pages: int) -> list[str] | None
         )
         if result.returncode == 0 and result.stdout:
             pages = result.stdout.split("\f")
-            # pdftotext emits a trailing \f after the last real page, which
-            # produces one extra empty element. Trim only that known
-            # artifact, and never below total_pages if it's known.
-            if total_pages and len(pages) == total_pages + 1 and not pages[-1].strip():
-                pages.pop()
-            elif not total_pages:
+            # pdftotext emits a trailing \f after the last real page, producing
+            # one (occasionally two) extra empty element(s). Trim trailing blank
+            # elements, but never below total_pages when it's known — so a
+            # genuinely blank final page is preserved while the +1/+2 form-feed
+            # artifact is healed rather than surfacing as a page-count mismatch.
+            if total_pages:
+                while len(pages) > total_pages and not pages[-1].strip():
+                    pages.pop()
+            else:
                 while pages and not pages[-1].strip():
                     pages.pop()
             return pages
@@ -288,9 +291,12 @@ def extract_text_any(
     ocr_threshold: int = 8,
     force_ocr: bool = False,
     deskew: bool = True,
-) -> tuple[str, str, list[int]]:
+) -> tuple[str, str, list[int], int]:
     """Full extraction pipeline with per-page OCR fallback.
-    Returns (form-feed-joined text, method summary, list of OCR'd page numbers).
+    Returns (form-feed-joined text, method summary, list of OCR'd page numbers,
+    total page count from pdfinfo/pypdf). The page count is returned rather than
+    recomputed by the caller so both the trim logic here and the quality report
+    downstream see the same authoritative number from a single pdfinfo call.
     """
     # Absolutise so a filename starting with '-' can't be read as an option by
     # pdfinfo/pdftotext/pdftoppm, and relative paths resolve consistently.
@@ -335,7 +341,7 @@ def extract_text_any(
             ocr_needed = [p for p in ocr_needed if p not in failed_set]
         method = f"{method} + tesseract OCR ({len(ocr_needed)} page(s))"
 
-    return "\f".join(pages), method, ocr_needed
+    return "\f".join(pages), method, ocr_needed, total_pages
 
 
 # ---------------------------------------------------------------------------
@@ -1037,7 +1043,7 @@ def resolve_pdf_inputs(inputs: list[str]) -> list[Path]:
 def process_one_pdf(pdf_path: Path, out_path: Path, args) -> dict:
     """Run the full pipeline on one PDF. Returns a stats dict."""
     print(f"\n=== {pdf_path.name} ===", file=sys.stderr)
-    raw_text, method, ocr_page_nums = extract_text_any(
+    raw_text, method, ocr_page_nums, expected_pages = extract_text_any(
         str(pdf_path),
         ocr_lang=args.ocr_lang,
         ocr_dpi=args.ocr_dpi,
@@ -1053,7 +1059,6 @@ def process_one_pdf(pdf_path: Path, out_path: Path, args) -> dict:
         print(f"  stripped {removed_count} invisible/bidi/tag characters "
               f"(possible hidden content or PDF artifacts)", file=sys.stderr)
 
-    expected_pages = count_pages(str(pdf_path))
     report = compute_quality_report(sanitized, ocr_page_nums, expected_pages)
     meta = extract_pdf_metadata(str(pdf_path))
     # Metadata is attacker-controllable and lands in the header; run it through
@@ -1063,13 +1068,15 @@ def process_one_pdf(pdf_path: Path, out_path: Path, args) -> dict:
         if meta.get(_k):
             meta[_k] = sanitize(meta[_k])[0]
 
+    # Build the header once and reuse it for both the file and the index line
+    # offset below. Rebuilding it separately risked the two renders drifting if
+    # report/meta were ever mutated between them, silently misaligning every
+    # index line number. Empty when --no-header, so the offset is 0.
+    header = ("" if getattr(args, "no_header", False)
+              else format_quality_header(report, pdf_path.name, meta))
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    if getattr(args, "no_header", False):
-        out_path.write_text(sanitized, encoding="utf-8")
-    else:
-        out_path.write_text(
-            format_quality_header(report, pdf_path.name, meta) + sanitized,
-            encoding="utf-8")
+    out_path.write_text(header + sanitized, encoding="utf-8")
 
     word_count = report["words"]
     page_count = report["pages_found"]
@@ -1098,12 +1105,9 @@ def process_one_pdf(pdf_path: Path, out_path: Path, args) -> dict:
     # --- Build the index: embedded PDF outline first, text regex fallback ---
     # The quality header is prepended to the output file, which shifts every
     # line number. Index line numbers MUST match the file as written, or
-    # every sed/grep range the user pulls will be wrong.
-    if getattr(args, "no_header", False):
-        line_offset = 0
-    else:
-        line_offset = format_quality_header(
-            report, pdf_path.name, meta).count("\n")
+    # every sed/grep range the user pulls will be wrong. Derive the offset from
+    # the exact header string written above so the two can never disagree.
+    line_offset = header.count("\n")
 
     index_path = out_path.with_suffix(out_path.suffix + ".index")
     outline = extract_pdf_outline(str(pdf_path))
