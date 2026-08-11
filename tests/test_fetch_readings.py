@@ -83,6 +83,17 @@ class TestGateDetectionStrengthening:
         assert "only 2 words" in fetch_readings.looks_gated(text, 2, min_words=5)
 
 
+class TestCli:
+    def test_version_flag(self):
+        import subprocess
+        result = subprocess.run(
+            ["python", "fetch_readings.py", "--version"],
+            capture_output=True, text=True, cwd=Path(__file__).parent.parent,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "1.1.0" in result.stdout
+
+
 class TestDryRun:
     def test_dry_run_writes_no_files(self, tmp_path: Path):
         urls_path = tmp_path / "urls.txt"

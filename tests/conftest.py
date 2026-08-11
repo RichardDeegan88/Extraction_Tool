@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
@@ -106,4 +107,31 @@ def junk_metadata_pdf(tmp_path: Path) -> Path:
                          "/Author": "A. N. Author"})
     with open(path, "wb") as f:
         writer.write(f)
+    return path
+
+
+@pytest.fixture
+def image_only_pdf(tmp_path: Path) -> Path:
+    """A one-page PDF with no text layer — only a rendered image.
+
+    This forces the OCR fallback path in preprocess_pdf.py.
+    """
+    path = tmp_path / "image_only.pdf"
+    img_path = tmp_path / "page.png"
+
+    # Create a simple image with text.
+    img = Image.new("L", (612, 792), color=255)
+    draw = ImageDraw.Draw(img)
+    try:
+        # Try to load a TrueType font; fall back to default bitmap font.
+        font = ImageFont.truetype("DejaVuSans.ttf", 24)
+    except Exception:
+        font = ImageFont.load_default()
+    draw.text((72, 360), "This page is an image.", fill=0, font=font)
+    draw.text((72, 400), "OCR is required to read it.", fill=0, font=font)
+    img.save(img_path, "PNG")
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    c.drawImage(str(img_path), 0, 0, width=612, height=792)
+    c.save()
     return path
