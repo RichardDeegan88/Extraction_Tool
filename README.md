@@ -34,6 +34,23 @@ Measured on the course's Howard/Paret *On War* (30 MB, 743 pages):
 
 ---
 
+## Why not just use a free PDF converter?
+
+A free converter turns a PDF into text. This tool makes sure the whole PDF
+reaches the assistant and tells you when it didn't.
+
+| Free converter | This tool |
+|---|---|
+| One big text dump | Verifies the extracted page count matches the PDF |
+| OCRs everything or nothing | OCRs only scanned pages, so typeset books stay fast |
+| No page markers | Inserts `--- PAGE 1 ---`, `--- PAGE 2 ---`, etc. for exact ranges |
+| No quality report | Reports page count, OCR percentage, and missing-page warnings |
+| Leaves headers/footers in | Strips repeated running headers, footers, and page numbers |
+| Doesn't handle syllabus links | Fetches open articles; lists paywalled ones for manual capture |
+| Uploads to a server | Runs entirely on your machine |
+
+---
+
 ## What's here
 
 | File | What it does |
