@@ -78,7 +78,7 @@ def _version() -> str:
 # URL extraction from PDF
 # --------------------------------------------------------------------------
 
-_TEXT_URL_RE = re.compile(r"https?://[^\s<>\"'\)\]}]+", re.IGNORECASE)
+_TEXT_URL_RE = re.compile(r"https?://[^\s<>\"'\]}]+", re.IGNORECASE)
 
 
 def _trim_url(url: str) -> str:

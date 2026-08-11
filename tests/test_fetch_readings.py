@@ -211,6 +211,12 @@ class TestBalancedParenthesisUrls:
     def test_trailing_comma_removed(self):
         assert fetch_readings._trim_url("https://example.com/page,") == "https://example.com/page"
 
+    def test_regex_keeps_balanced_paren_in_url(self):
+        raw = "https://en.wikipedia.org/wiki/Clausewitz_(surname)"
+        match = fetch_readings._TEXT_URL_RE.search(f"See {raw} for more.")
+        assert match is not None
+        assert fetch_readings._trim_url(match.group(0)) == raw
+
 
 class TestAtomicWrites:
     def test_atomic_write_text_creates_target(self, tmp_path: Path):
