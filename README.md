@@ -39,7 +39,8 @@ Measured on the course's Howard/Paret *On War* (30 MB, 743 pages):
 | `preprocess_pdf.py` | PDF -> complete searchable text, with OCR for scanned pages |
 | `fetch_readings.py` | Syllabus PDF -> fetches the readings that are only links |
 | `RUN-ME.bat` / `run-me.sh` | No-command-line launchers (Windows / macOS-Linux) |
-| `docs/SETUP.md` | Install, per operating system. Start here. |
+| `docs/QUICKSTART.md` | **Start here if you are not technical.** Click-by-click setup and run guide. |
+| `docs/SETUP.md` | Install, per operating system. More detail than QUICKSTART. |
 | `docs/SECURITY.md` | What you're installing and how to verify it. Read before installing. |
 | `docs/WORKFLOW.md` | The whole loop: Drive, extraction, study guides |
 | `docs/USING-WITH-AI.md` | How to actually get good study guides out of this |
@@ -49,6 +50,11 @@ Measured on the course's Howard/Paret *On War* (30 MB, 743 pages):
 ---
 
 ## Quickstart
+
+**Not comfortable with the command line?** Use `docs/QUICKSTART.md` — it has
+click-by-click instructions for Windows, macOS, and Linux.
+
+If you are comfortable with the command line:
 
 ```
 git clone https://github.com/RichardDeegan88/Extraction_Tool.git
@@ -65,6 +71,13 @@ Then read `docs/QUALITY.md` before you quote anything.
 
 > First time on a managed or work machine? Read `docs/SECURITY.md` before
 > installing — it covers what each tool is and how to verify it.
+
+To preview what a run would do without writing any files:
+
+```
+python preprocess_pdf.py "path/to/books" --out-dir extracted --dry-run
+python fetch_readings.py syllabus.pdf --out-dir readings --dry-run
+```
 
 ---
 
@@ -110,9 +123,18 @@ that is the single most common setup failure and the doc covers it.
 
 ---
 
+## Tests
+
+```
+pip install -r requirements.txt -r requirements-test.txt
+pytest tests/
+```
+
+The suite uses synthetic PDF fixtures, so it does not need any copyrighted books.
+
 ## Version
 
-v1.0.1 — see `CHANGELOG.md` for release notes and known limits.
+v1.1.0 — see `CHANGELOG.md` for release notes and known limits.
 
 ---
 

@@ -309,16 +309,41 @@ _GATE_PHRASES = (
     "checking your browser", "access denied", "subscription required",
 )
 
+_LOGIN_FORM_RE = re.compile(
+    r"<form[^>]*>(.*?)</form>",
+    re.IGNORECASE | re.DOTALL,
+)
+_LOGIN_FORM_MARKERS = ("login", "log in", "signin", "sign in", "auth",
+                       "password", "passwort", "contraseña")
 
-def looks_gated(text: str, word_count: int) -> str:
+
+def _has_login_form(html: str) -> bool:
+    """Return True if the HTML contains a form that looks like a login gate."""
+    low_html = html.lower()
+    for form in _LOGIN_FORM_RE.finditer(low_html):
+        block = form.group(0)
+        if any(marker in block for marker in _LOGIN_FORM_MARKERS):
+            return True
+    return False
+
+
+def looks_gated(text: str, word_count: int, min_words: int = 120) -> str:
     """Return a reason string if this looks like a gate/error page."""
     low = text[:4000].lower()
     for phrase in _GATE_PHRASES:
         if phrase in low:
             return f"page contains '{phrase}'"
-    if word_count < 120:
+    if word_count < min_words:
         return f"only {word_count} words retrieved (likely a stub or gate)"
     return ""
+
+
+def page_looks_gated(html: str, text: str, word_count: int,
+                     min_words: int = 120) -> str:
+    """Check both raw HTML structure and extracted text for gate signals."""
+    if _has_login_form(html):
+        return "page contains a login form"
+    return looks_gated(text, word_count, min_words=min_words)
 
 
 # --------------------------------------------------------------------------
@@ -420,6 +445,12 @@ def main() -> None:
                     help="seconds between requests (default 1.5)")
     ap.add_argument("--timeout", type=int, default=30)
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--min-words", type=int, default=120,
+                    help="minimum word count for an article to be considered "
+                         "successfully fetched (default 120)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="categorise URLs and report what would be fetched, "
+                         "but make no network requests and write no files")
     args = ap.parse_args()
 
     if not args.pdf and not args.urls:
@@ -474,6 +505,27 @@ def main() -> None:
             for page, url in buckets[kind]:
                 loc = f"[p.{page}] " if page else ""
                 print(f"  {loc}{url}")
+        return
+
+    if args.dry_run:
+        print(f"\n=== DRY RUN - no network requests, no files written ===",
+              file=sys.stderr)
+        print(f"Output directory would be: {args.out_dir}", file=sys.stderr)
+        for kind, label in (
+            ("article", "would fetch as text"),
+            ("pdf", "would download as PDF"),
+            ("gated", "would route to MANUAL_CAPTURE.txt"),
+            ("video", "would be noted as video" if args.include_videos
+             else "would be skipped (video)"),
+        ):
+            if not buckets[kind]:
+                continue
+            print(f"\n--- {label} ---", file=sys.stderr)
+            for page, url in buckets[kind]:
+                loc = f"[p.{page}] " if page else ""
+                print(f"  {loc}{url}", file=sys.stderr)
+        print(f"\nEstimated MANUAL_CAPTURE.txt entries: "
+              f"{len(buckets['gated'])}", file=sys.stderr)
         return
 
     out_dir = Path(args.out_dir)
@@ -531,7 +583,8 @@ def main() -> None:
         text, title, extractor = extract_article(body)
         text, title = strip_hidden(text), strip_hidden(title)
         words = len(text.split())
-        reason = looks_gated(text, words)
+        raw_html = body.decode("utf-8", errors="replace")
+        reason = page_looks_gated(raw_html, text, words, min_words=args.min_words)
         if reason:
             manual.append((url, reason))
             continue
