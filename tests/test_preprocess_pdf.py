@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -172,6 +174,99 @@ class TestMetadataHelpers:
         stem, why = preprocess_pdf.build_metadata_filename(meta, "original")
         assert stem == "original"
         assert "no title" in why.lower()
+
+
+class TestAuthorNameNormalization:
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("Clausewitz, Carl", "Carl Clausewitz"),
+            ("Clausewitz, Carl von", "Carl von Clausewitz"),
+            # Surname + suffix + first name: the reported edge case.
+            ("Meyer, Jr., David", "David Meyer, Jr."),
+            ("Smith, Sr., John", "John Smith, Sr."),
+            # Multi-author strings must not be reordered.
+            ("Clausewitz, Carl and Jomini, Antoine", "Clausewitz, Carl and Jomini, Antoine"),
+            # Ambiguous or already-first-name forms fall through unchanged.
+            ("Carl Clausewitz", "Carl Clausewitz"),
+            ("Smith, John, Jr.", "Smith, John, Jr."),
+            # Too many commas to interpret safely.
+            ("A, B, C, D", "A, B, C, D"),
+        ],
+    )
+    def test_normalize_author_for_filename(self, raw, expected):
+        assert preprocess_pdf._normalize_author_for_filename(raw) == expected
+
+    def test_build_filename_with_surname_first(self):
+        meta = {"title": "On War", "author": "Clausewitz, Carl", "year": "1832", "title_rejected": ""}
+        stem, why = preprocess_pdf.build_metadata_filename(meta, "on-war")
+        assert stem == "Carl Clausewitz - On War (1832)"
+        assert why == ""
+
+    def test_build_filename_with_suffix_edge_case(self):
+        meta = {"title": "Strategy", "author": "Meyer, Jr., David", "year": "", "title_rejected": ""}
+        stem, why = preprocess_pdf.build_metadata_filename(meta, "strategy")
+        assert stem == "David Meyer, Jr. - Strategy"
+        assert why == ""
+
+
+class TestOcrLangValidation:
+    def test_installed_tesseract_langs_parses_output(self):
+        stdout = "List of available languages (3):\neng\nlat\ndeu\n"
+        with patch.object(
+            subprocess, "run", return_value=__import__("subprocess").CompletedProcess(
+                args=["tesseract", "--list-langs"], returncode=0, stdout=stdout, stderr=""
+            )
+        ):
+            assert preprocess_pdf._installed_tesseract_langs() == ["eng", "lat", "deu"]
+
+    def test_installed_tesseract_langs_returns_empty_on_failure(self):
+        with patch.object(
+            subprocess, "run", return_value=__import__("subprocess").CompletedProcess(
+                args=["tesseract", "--list-langs"], returncode=1, stdout="", stderr="error"
+            )
+        ):
+            assert preprocess_pdf._installed_tesseract_langs() == []
+
+    def test_validate_ocr_lang_accepts_installed_single(self):
+        with patch.object(
+            preprocess_pdf, "_installed_tesseract_langs", return_value=["eng", "lat"]
+        ):
+            ok, missing = preprocess_pdf._validate_ocr_lang("eng")
+            assert ok is True
+            assert missing == []
+
+    def test_validate_ocr_lang_accepts_installed_combined(self):
+        with patch.object(
+            preprocess_pdf, "_installed_tesseract_langs", return_value=["eng", "lat"]
+        ):
+            ok, missing = preprocess_pdf._validate_ocr_lang("eng+lat")
+            assert ok is True
+            assert missing == []
+
+    def test_validate_ocr_lang_reports_missing_pack(self):
+        with patch.object(
+            preprocess_pdf, "_installed_tesseract_langs", return_value=["eng"]
+        ):
+            ok, missing = preprocess_pdf._validate_ocr_lang("deu")
+            assert ok is False
+            assert missing == ["deu"]
+
+    def test_validate_ocr_lang_reports_partial_missing_in_combo(self):
+        with patch.object(
+            preprocess_pdf, "_installed_tesseract_langs", return_value=["eng"]
+        ):
+            ok, missing = preprocess_pdf._validate_ocr_lang("eng+lat")
+            assert ok is False
+            assert missing == ["lat"]
+
+    def test_validate_ocr_lang_treats_empty_as_valid(self):
+        with patch.object(
+            preprocess_pdf, "_installed_tesseract_langs", return_value=["eng"]
+        ):
+            ok, missing = preprocess_pdf._validate_ocr_lang("")
+            assert ok is True
+            assert missing == []
 
 
 class TestEndToEndExtraction:

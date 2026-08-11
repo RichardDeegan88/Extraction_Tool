@@ -126,5 +126,12 @@ own metadata, which is set by whoever made the file and is frequently wrong. One
 real book's title field read `imageItem8901132859708402734#_#9780190265687`.
 Verify against the title page.
 
+**Metadata filenames.** When `--name-from-metadata` is used, the tool tries to
+swap "Surname, First" into "First Surname" so filenames read naturally. It
+handles simple suffix cases such as "Meyer, Jr., David" -> "David Meyer, Jr.",
+but unusual author strings (multiple commas, "Jr." in unexpected positions,
+multi-author "X and Y" strings) are left as-is rather than guessed. The output
+name is safest when the PDF's `/Author` field is already in "First Last" form.
+
 **Blank pages** are tagged `[BLANK]` rather than silently dropped, so the page
 numbering stays honest.

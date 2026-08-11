@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- `preprocess_pdf.py`: `--ocr-lang` is now validated against the tesseract
+  language packs actually installed on the machine. `--check` reports missing
+  packs, and a normal run fails fast with one clear message instead of raising
+  a per-page RuntimeError for every OCR'd page.
+- `preprocess_pdf.py`: author-name normalization for `--name-from-metadata`
+  now handles suffixes such as "Meyer, Jr., David" correctly, while still
+  leaving multi-author and ambiguous strings untouched. Added unit tests for
+  the edge cases and a note in `docs/QUALITY.md`.
+
 ## [1.1.0] - 2026-08-10
 
 Improvements focused on testability, operator confidence, and avoiding silent

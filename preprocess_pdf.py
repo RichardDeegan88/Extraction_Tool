@@ -487,6 +487,36 @@ def _title_is_usable(title: str) -> bool:
     return len(words) >= 2
 
 
+# Name suffixes that can sit between surname and first name in metadata,
+# e.g. "Meyer, Jr., David". Without this guard the comma-count check would
+# leave the whole string unchanged (safe, but not the intended filename).
+_AUTHOR_SUFFIX_RE = re.compile(
+    r"^(jr|sr|ii|iii|iv|v|vi|vii|viii|ix|x|phd|md|esq|jd|rn|cpa)\.?$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_author_for_filename(author: str) -> str:
+    """Swap "Surname, First" -> "First Surname" for filenames.
+
+    Multi-author strings ("... and ...") and ambiguous formats are left
+    untouched so the filename never invents a name it does not have.
+    Suffix-aware so "Meyer, Jr., David" becomes "David Meyer, Jr." rather
+    than being left as-is or mangled."""
+    if not author or " and " in author.lower():
+        return author
+    parts = [p.strip() for p in author.split(",")]
+    if len(parts) == 2:
+        last, first = parts
+        if last and first:
+            return f"{first} {last}"
+    if len(parts) == 3:
+        last, middle, first = parts
+        if last and first and _AUTHOR_SUFFIX_RE.match(middle):
+            return f"{first} {last}, {middle}"
+    return author
+
+
 def extract_pdf_metadata(pdf_path: str) -> dict:
     """Read Title/Author/year from a PDF's metadata.
 
@@ -554,10 +584,7 @@ def build_metadata_filename(meta: dict, fallback_stem: str,
     parts = []
     if author:
         # "Surname, First" -> "First Surname" reads better in a filename.
-        if author.count(",") == 1 and " and " not in author.lower():
-            last, first = (s.strip() for s in author.split(","))
-            if last and first:
-                author = f"{first} {last}"
+        author = _normalize_author_for_filename(author)
         parts.append(author)
     parts.append(title)
     stem = " - ".join(parts)
@@ -959,7 +986,49 @@ def format_quality_header(report: dict, pdf_name: str,
 # Dependency preflight
 # ---------------------------------------------------------------------------
 
-def check_dependencies() -> None:
+def _installed_tesseract_langs() -> list[str]:
+    """Return the language packs tesseract reports as installed.
+
+    The first line of ``tesseract --list-langs`` is a header ("List of
+    available languages (NN):"); the rest are language codes such as
+    ``eng``, ``deu``, ``lat``. An empty list is returned when tesseract is
+    missing or the command fails, so callers can treat it as "can't tell"."""
+    if not shutil.which("tesseract"):
+        return []
+    try:
+        result = subprocess.run(
+            ["tesseract", "--list-langs"],
+            capture_output=True, text=True, timeout=30,
+            encoding="utf-8", errors="replace",
+        )
+        if result.returncode != 0:
+            return []
+        lines = result.stdout.splitlines()
+        if lines and lines[0].startswith("List of available languages"):
+            lines = lines[1:]
+        return [line.strip() for line in lines if line.strip()]
+    except Exception:
+        return []
+
+
+def _validate_ocr_lang(lang: str) -> tuple[bool, list[str]]:
+    """Check a tesseract language argument (e.g. ``eng`` or ``eng+lat``).
+
+    Returns ``(ok, missing)``. ``ok`` is True when every requested pack is
+    installed. Empty/missing ``lang`` is treated as valid."""
+    if not lang:
+        return True, []
+    installed = set(_installed_tesseract_langs())
+    if not installed:
+        # tesseract missing or unreadable; let the existing per-tool check
+        # report that rather than falsely claiming the language is missing.
+        return True, []
+    requested = [l.strip() for l in lang.split("+") if l.strip()]
+    missing = [l for l in requested if l not in installed]
+    return not missing, missing
+
+
+def check_dependencies(ocr_lang: str | None = None) -> None:
     checks = [
         ("pdftotext", shutil.which("pdftotext") is not None, "poppler-utils", True),
         ("pdftoppm", shutil.which("pdftoppm") is not None, "poppler-utils", True),
@@ -983,6 +1052,22 @@ def check_dependencies() -> None:
               + ("" if ok else f"  ->  install: {install_hint}"))
         if not ok and required:
             any_missing_required = True
+
+    # Validate the requested OCR language pack(s) when tesseract is present.
+    if ocr_lang and shutil.which("tesseract"):
+        ok, missing = _validate_ocr_lang(ocr_lang)
+        if missing:
+            print()
+            print(f"OCR language check for '{ocr_lang}':")
+            for lang in missing:
+                print(f"  [MISSING] tesseract language pack: {lang}")
+            print("  -> install the missing pack(s), e.g.:")
+            print("     Linux:   sudo apt install tesseract-ocr-<lang>")
+            print("     macOS:   brew install tesseract-lang")
+            print("     Windows: download the language data files for Tesseract")
+            any_missing_required = True
+        else:
+            print(f"  [OK]      OCR language pack(s): {ocr_lang}")
 
     print()
     if any_missing_required:
@@ -1275,7 +1360,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.check:
-        check_dependencies()
+        check_dependencies(ocr_lang=args.ocr_lang)
         return
 
     if not args.inputs:
@@ -1290,6 +1375,16 @@ def main() -> None:
     if args.out and len(pdf_files) > 1:
         parser.error("-o/--out only works with a single PDF; "
                       "use --out-dir for batches")
+
+    # Fail fast on a missing OCR language pack rather than letting every
+    # OCR page raise RuntimeError and spam the same warning N times.
+    if shutil.which("tesseract"):
+        ok, missing = _validate_ocr_lang(args.ocr_lang)
+        if not ok:
+            print(f"Error: requested OCR language '{args.ocr_lang}' is missing "
+                  f"language pack(s): {', '.join(missing)}", file=sys.stderr)
+            print("Run with --check to see installed packs.", file=sys.stderr)
+            sys.exit(1)
 
     print(f"Found {len(pdf_files)} PDF file(s) to process.", file=sys.stderr)
 
