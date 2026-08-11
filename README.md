@@ -110,6 +110,18 @@ The AI comes later, when you use the extracted text. That part is on you, and
 
 ---
 
+## Limitations
+
+- **Paywalls and institutional logins are not bypassed.** Save those readings as
+  PDFs through your browser, then point `preprocess_pdf.py` at the saved files.
+  `fetch_readings.py` writes any gated links to `MANUAL_CAPTURE.txt`.
+- **Videos are not transcribed.** Video links are skipped by default.
+- **Output is raw text, not a summary.** The tool only makes the source readable.
+
+See `docs/QUICKSTART.md` for a recommended folder layout and storage setup.
+
+---
+
 ## Requirements
 
 - Python 3.9 or newer
