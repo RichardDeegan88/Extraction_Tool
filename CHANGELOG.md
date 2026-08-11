@@ -6,6 +6,16 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Security
+- `fetch_readings.py`: URLs are now resolved and rejected before fetching if
+  they point to loopback, private, link-local, multicast, or reserved IP
+  addresses (IPv4 and IPv6). Redirects are validated the same way, so a
+  syllabus cannot request or redirect to internal services or cloud metadata
+  endpoints.
+- `fetch_readings.py`: downloads are now streamed in chunks with separate size
+  limits for articles (10 MB) and PDFs (100 MB). Oversized responses abort
+  early instead of buffering indefinitely into memory.
+
 ### Fixed
 - `preprocess_pdf.py`: `--ocr-lang` is now validated against the tesseract
   language packs actually installed on the machine. `--check` reports missing
@@ -15,6 +25,17 @@ All notable changes to this project are documented here. Format follows
   now handles suffixes such as "Meyer, Jr., David" correctly, while still
   leaving multi-author and ambiguous strings untouched. Added unit tests for
   the edge cases and a note in `docs/QUALITY.md`.
+- `fetch_readings.py`: a login form is only treated as a gate signal when the
+  extracted article is short or the form dominates the page. Unrelated login
+  widgets on otherwise-readable articles no longer cause false positives.
+- `fetch_readings.py`: URLs containing balanced parentheses (e.g. Wikipedia
+  article URLs) are no longer truncated at the closing parenthesis.
+- `fetch_readings.py`: response bodies are decoded using the charset from the
+  `Content-Type` header when present, falling back to UTF-8 with replacement.
+- `preprocess_pdf.py` and `fetch_readings.py`: output files (`.txt`, `.index`,
+  downloaded PDFs, and `MANUAL_CAPTURE.txt`) are written atomically via a
+  temporary sibling file and renamed only on success. Interrupted writes no
+  longer leave partial files that would be skipped on the next run.
 
 ## [1.1.0] - 2026-08-10
 

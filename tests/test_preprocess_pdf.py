@@ -373,6 +373,21 @@ class TestCli:
         assert "1.1.0" in result.stdout
 
 
+class TestAtomicWrites:
+    def test_atomic_write_text_creates_file(self, tmp_path: Path):
+        target = tmp_path / "out.txt"
+        preprocess_pdf._atomic_write_text(target, "complete output")
+        assert target.read_text(encoding="utf-8") == "complete output"
+        assert not (tmp_path / "out.txt.tmp").exists()
+
+    def test_atomic_write_cleans_temp_on_failure(self, tmp_path: Path):
+        target = tmp_path / "missing_dir" / "out.txt"
+        with pytest.raises(Exception):
+            preprocess_pdf._atomic_write_text(target, "data")
+        assert not target.exists()
+        assert not (tmp_path / "out.txt.tmp").exists()
+
+
 class TestDryRun:
     def test_dry_run_writes_no_files(self, simple_pdf: Path, tmp_path: Path):
         out_dir = tmp_path / "extracted"

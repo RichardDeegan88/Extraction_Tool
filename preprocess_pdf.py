@@ -95,6 +95,23 @@ def _version() -> str:
         return version_file.read_text(encoding="utf-8").strip()
     return "unknown"
 
+
+def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    """Write *text* to *path* atomically via a temporary sibling file.
+
+    If the write or rename fails, the temporary file is removed so a partial
+    output is never left behind to be mistaken for a complete extraction."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_text(text, encoding=encoding)
+        tmp.replace(path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
 # ---------------------------------------------------------------------------
 # Step 1 — extraction (fallback chain)
 # ---------------------------------------------------------------------------
@@ -1169,13 +1186,10 @@ def process_one_pdf(pdf_path: Path, out_path: Path, args) -> dict:
               else format_quality_header(report, pdf_path.name, meta))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(header + sanitized, encoding="utf-8")
+    output_text = header + sanitized
 
     word_count = report["words"]
     page_count = report["pages_found"]
-    print(f"  wrote {out_path}  ({word_count:,} words, {page_count} pages, "
-          f"{report['ocr_pages']} OCR'd = {report['ocr_pct']:.1f}%)",
-          file=sys.stderr)
 
     # Surface quality problems on the console too, not just in the file.
     if not report["page_count_ok"]:
@@ -1242,10 +1256,10 @@ def process_one_pdf(pdf_path: Path, out_path: Path, args) -> dict:
             loc = f"line {line_no:>7}" if line_no else f"page {page} (no marker)"
             flag = ("  [on OCR page]" if page in ocr_page_set else "")
             index_lines.append(f"{'  ' * depth}[p.{page:>4}] {loc}: {title}{flag}")
-        index_path.write_text("\n".join(index_lines) + "\n", encoding="utf-8")
+        index_text = "\n".join(index_lines) + "\n"
         headings_count = len(outline)
-        print(f"  index from embedded PDF outline: {len(outline)} entries "
-              f"-> {index_path}", file=sys.stderr)
+        index_note = (f"  index from embedded PDF outline: {len(outline)} entries "
+                      f"-> {index_path}")
     else:
         # Fallback: text-pattern detection (BOOK / Chapter N / bare Roman
         # numerals), with suspected endnotes dividers demoted to [CH?].
@@ -1278,29 +1292,38 @@ def process_one_pdf(pdf_path: Path, out_path: Path, args) -> dict:
                 index_lines.append(
                     f"{tag_map[level]} line {shifted:>7}: {htext}"
                     f"{_ocr_flag_for_line(line_no)}")
-            index_path.write_text("\n".join(index_lines) + "\n", encoding="utf-8")
+            index_text = "\n".join(index_lines) + "\n"
             book_n = sum(1 for _, lvl, _ in headings if lvl == "book")
             ch_n = sum(1 for _, lvl, _ in headings if lvl == "chapter")
             susp_n = sum(1 for _, lvl, _ in headings if lvl == "chapter?")
             other_n = len(headings) - book_n - ch_n - susp_n
-            print(f"  no embedded outline; text detection found {book_n} book(s), "
-                  f"{ch_n} chapter(s)"
-                  + (f", {susp_n} suspected endnote divider(s)" if susp_n else "")
-                  + (f", {other_n} unlabeled heading(s)" if other_n else "")
-                  + f" -> {index_path}", file=sys.stderr)
+            index_note = (
+                f"  no embedded outline; text detection found {book_n} book(s), "
+                f"{ch_n} chapter(s)"
+                + (f", {susp_n} suspected endnote divider(s)" if susp_n else "")
+                + (f", {other_n} unlabeled heading(s)" if other_n else "")
+                + f" -> {index_path}")
         else:
-            index_path.write_text(
+            index_text = (
                 "\n".join(index_banner) +
                 f"\nNo embedded PDF outline, and no BOOK/CHAPTER headings were\n"
                 f"detected by pattern matching in {pdf_path.name}.\n\n"
                 f"This is normal for books whose chapters are titled without the\n"
                 f"word 'Chapter' (e.g. '1 The Dragon and the Snakes').\n"
                 f"Navigate by page marker instead:\n"
-                f"  grep -n '^--- PAGE' <file.txt>\n",
-                encoding="utf-8",
+                f"  grep -n '^--- PAGE' <file.txt>\n"
             )
-            print(f"  no embedded outline and no headings auto-detected "
-                  f"-> {index_path}", file=sys.stderr)
+            index_note = (f"  no embedded outline and no headings auto-detected "
+                          f"-> {index_path}")
+
+    # Write both outputs atomically so an interrupted run never leaves a
+    # partial .txt or .index that the next invocation would skip as complete.
+    _atomic_write_text(out_path, output_text)
+    _atomic_write_text(index_path, index_text)
+    print(f"  wrote {out_path}  ({word_count:,} words, {page_count} pages, "
+          f"{report['ocr_pages']} OCR'd = {report['ocr_pct']:.1f}%)",
+          file=sys.stderr)
+    print(index_note, file=sys.stderr)
 
     return {
         "pdf": pdf_path, "out": out_path, "words": word_count,

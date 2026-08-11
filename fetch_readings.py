@@ -56,7 +56,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import ipaddress
 import re
+import socket
 import sys
 import time
 import urllib.error
@@ -77,6 +79,18 @@ def _version() -> str:
 # --------------------------------------------------------------------------
 
 _TEXT_URL_RE = re.compile(r"https?://[^\s<>\"'\)\]}]+", re.IGNORECASE)
+
+
+def _trim_url(url: str) -> str:
+    """Strip trailing punctuation from a regex-matched URL.
+
+    Parentheses are special: a trailing ')' is only removed if it has no
+    matching '(' earlier in the URL, so Wikipedia-style URLs with balanced
+    parentheses survive."""
+    url = url.rstrip(".,;")
+    while url.endswith(")") and url.count("(") < url.count(")"):
+        url = url[:-1]
+    return url
 
 
 def urls_from_pdf(pdf_path: str) -> list[tuple[int, str]]:
@@ -120,7 +134,7 @@ def urls_from_pdf(pdf_path: str) -> list[tuple[int, str]]:
         # 2) URLs written out as visible text
         try:
             for m in _TEXT_URL_RE.finditer(page.extract_text() or ""):
-                found.append((page_num, m.group(0).rstrip(".,;)")))
+                found.append((page_num, _trim_url(m.group(0))))
         except Exception:
             pass
 
@@ -196,38 +210,107 @@ def safe_filename(url: str, max_len: int = 80) -> str:
 # Fetching
 # --------------------------------------------------------------------------
 
+# Size ceilings for streamed downloads. Articles are kept small; PDFs may be
+# large scanned books, but a multi-hundred-megabyte response is still abnormal.
+MAX_ARTICLE_SIZE = 10 * 1024 * 1024   # 10 MB
+MAX_PDF_SIZE = 100 * 1024 * 1024      # 100 MB
+_DOWNLOAD_CHUNK = 64 * 1024           # 64 KB
+
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/122.0 Safari/537.36")
 
 
+def _is_public_host(host: str) -> tuple[bool, str]:
+    """Resolve *host* and ensure every returned IP is public.
+
+    Returns ``(True, "")`` if all resolved addresses are routable, or
+    ``(False, reason)`` if the host is a loopback, private, link-local,
+    multicast, reserved, or documentation address. DNS resolution failures
+    are treated as a block (fail closed) because we cannot verify safety.
+    """
+    if not host:
+        return False, "empty host"
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        return False, f"could not resolve host: {e.strerror or host}"
+    except Exception as e:
+        return False, f"could not resolve host: {type(e).__name__}: {e}"
+
+    ips = set()
+    for info in infos:
+        sockaddr = info[4]
+        # sockaddr is (ip, port, ...) for IPv4 or (ip, port, flow, scope) for IPv6.
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        ips.add(ip)
+        if ip.is_loopback:
+            return False, f"refused loopback address: {ip}"
+        if ip.is_link_local:
+            return False, f"refused link-local address: {ip}"
+        if ip.is_private:
+            return False, f"refused private address: {ip}"
+        if ip.is_multicast:
+            return False, f"refused multicast address: {ip}"
+        if ip.is_reserved:
+            return False, f"refused reserved address: {ip}"
+    if not ips:
+        return False, "host resolved to no usable IP addresses"
+    return True, ""
+
+
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Refuse to follow a redirect that leaves http(s).
+    """Refuse to follow a redirect that leaves http(s) or reaches a private host.
 
     urllib's default handler permits redirects to ftp:// (and would to file://
     were it not separately blocked), so a compromised server could otherwise
-    escalate a fetch to another scheme. Route such hops to manual capture.
+    escalate a fetch to another scheme. We also block redirects to loopback,
+    LAN, cloud-metadata, and similar addresses that a syllabus URL should never
+    legitimately target.
     """
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if urlparse(newurl).scheme.lower() not in ("http", "https"):
+        scheme = urlparse(newurl).scheme.lower()
+        if scheme not in ("http", "https"):
             raise urllib.error.HTTPError(
                 newurl, code,
                 f"refused redirect to non-http(s) URL: {newurl}", headers, fp)
+        host = urlparse(newurl).netloc.split(":")[0]
+        ok, reason = _is_public_host(host)
+        if not ok:
+            raise urllib.error.HTTPError(
+                newurl, code, f"refused redirect to private host: {reason}",
+                headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 _OPENER = urllib.request.build_opener(_SafeRedirectHandler)
 
 
-def fetch_url(url: str, timeout: int) -> tuple[bytes | None, str, str]:
-    """Fetch a URL. Returns (body_bytes, content_type, error_message)."""
+def fetch_url(
+    url: str, timeout: int, max_size: int | None = None
+) -> tuple[bytes | None, str, str, str | None]:
+    """Fetch a URL. Returns (body_bytes, content_type, error_message, size_reason).
+
+    *max_size* caps the response body. When the limit is exceeded the body is
+    ``None`` and *size_reason* explains why. Redirects are followed only over
+    HTTP(S) and only to public hosts."""
     # Only ever fetch over HTTP(S). urllib also honours file:// and ftp://, so
     # an untrusted URL list could otherwise read local files (e.g.
     # file:///C:/Users/.../id_rsa) into the output folder. Redirects are
     # scheme-checked too, via _SafeRedirectHandler.
     scheme = urlparse(url).scheme.lower()
     if scheme not in ("http", "https"):
-        return None, "", f"refused non-http(s) URL scheme: {scheme or 'none'}"
+        return None, "", f"refused non-http(s) URL scheme: {scheme or 'none'}", None
+
+    host = urlparse(url).netloc.split(":")[0]
+    ok, reason = _is_public_host(host)
+    if not ok:
+        return None, "", reason, None
+
     req = urllib.request.Request(url, headers={
         "User-Agent": _UA,
         "Accept": "text/html,application/xhtml+xml,application/pdf,*/*",
@@ -235,13 +318,38 @@ def fetch_url(url: str, timeout: int) -> tuple[bytes | None, str, str]:
     })
     try:
         with _OPENER.open(req, timeout=timeout) as resp:
-            return resp.read(), resp.headers.get("Content-Type", ""), ""
+            content_type = resp.headers.get("Content-Type", "")
+            if max_size is not None:
+                try:
+                    content_length = int(resp.headers.get("Content-Length", ""))
+                except ValueError:
+                    content_length = None
+                if content_length is not None and content_length > max_size:
+                    return (
+                        None, content_type,
+                        f"response Content-Length ({content_length}) exceeds "
+                        f"limit ({max_size})",
+                        "size_limit",
+                    )
+            body = bytearray()
+            while True:
+                chunk = resp.read(_DOWNLOAD_CHUNK)
+                if not chunk:
+                    break
+                body.extend(chunk)
+                if max_size is not None and len(body) > max_size:
+                    return (
+                        None, content_type,
+                        f"response body exceeded {max_size} byte limit",
+                        "size_limit",
+                    )
+            return bytes(body), content_type, "", None
     except urllib.error.HTTPError as e:
-        return None, "", f"HTTP {e.code} {e.reason}"
+        return None, "", f"HTTP {e.code} {e.reason}", None
     except urllib.error.URLError as e:
-        return None, "", f"connection failed: {e.reason}"
+        return None, "", f"connection failed: {e.reason}", None
     except Exception as e:
-        return None, "", f"{type(e).__name__}: {e}"
+        return None, "", f"{type(e).__name__}: {e}", None
 
 
 # --------------------------------------------------------------------------
@@ -278,12 +386,33 @@ def html_to_text_builtin(raw_html: str) -> str:
     return _MULTI_NL.sub("\n\n", text).strip()
 
 
-def extract_article(raw: bytes) -> tuple[str, str, str]:
-    """Return (text, title, extractor_name)."""
+def _decode_body(raw: bytes, content_type: str) -> str:
+    """Decode response bytes, honouring the charset from Content-Type if present.
+
+    Falls back to UTF-8 with replacement characters, so a mislabelled or
+    binary response never crashes extraction."""
+    charset = None
+    if content_type:
+        # e.g. "text/html; charset=iso-8859-1"
+        parts = [p.strip() for p in content_type.split(";")]
+        for part in parts[1:]:
+            if part.lower().startswith("charset="):
+                charset = part.split("=", 1)[1].strip('"\'')
+                break
+    if charset:
+        try:
+            return raw.decode(charset, errors="replace")
+        except (LookupError, UnicodeError):
+            pass
     try:
-        raw_html = raw.decode("utf-8", errors="replace")
+        return raw.decode("utf-8", errors="replace")
     except Exception:
-        raw_html = str(raw)
+        return str(raw)
+
+
+def extract_article(raw: bytes, content_type: str = "") -> tuple[str, str, str]:
+    """Return (text, title, extractor_name)."""
+    raw_html = _decode_body(raw, content_type)
 
     title = ""
     m = _TITLE.search(raw_html)
@@ -335,6 +464,24 @@ def _has_login_form(html: str) -> bool:
     return False
 
 
+def _login_form_dominates(html: str) -> bool:
+    """Return True if a login-looking form makes up a large share of the body.
+
+    A long article with an unrelated login widget in the header should not be
+    discarded, but a page that is mostly a login form should."""
+    low_html = html.lower()
+    body_match = re.search(r"<body[^>]*>(.*?)</body>", low_html, re.DOTALL)
+    body = body_match.group(1) if body_match else low_html
+    if not body:
+        return False
+    form_len = 0
+    for form in _LOGIN_FORM_RE.finditer(low_html):
+        if any(marker in form.group(0) for marker in _LOGIN_FORM_MARKERS):
+            form_len += len(form.group(0))
+            break  # one decisive login form is enough to measure
+    return form_len > 0 and form_len / len(body) > 0.4
+
+
 def looks_gated(text: str, word_count: int, min_words: int = 120) -> str:
     """Return a reason string if this looks like a gate/error page."""
     low = text[:4000].lower()
@@ -348,9 +495,16 @@ def looks_gated(text: str, word_count: int, min_words: int = 120) -> str:
 
 def page_looks_gated(html: str, text: str, word_count: int,
                      min_words: int = 120) -> str:
-    """Check both raw HTML structure and extracted text for gate signals."""
+    """Check both raw HTML structure and extracted text for gate signals.
+
+    A login form is only treated as decisive when the extracted text is short
+    or the form dominates the page, so unrelated login widgets on real articles
+    do not cause false positives."""
     if _has_login_form(html):
-        return "page contains a login form"
+        if word_count < min_words:
+            return "page contains a login form and extracted text is short"
+        if _login_form_dominates(html):
+            return "page contains a login form that dominates the page"
     return looks_gated(text, word_count, min_words=min_words)
 
 
@@ -432,6 +586,37 @@ def format_header(url: str, title: str, extractor: str, words: int,
         "",
     ]
     return "\n".join(lines)
+
+
+def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    """Write *text* to *path* atomically via a temporary sibling file.
+
+    If the write or rename fails, the temporary file is removed so a partial
+    file is never left behind to be mistaken for a complete result."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_text(text, encoding=encoding)
+        tmp.replace(path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write *data* to *path* atomically via a temporary sibling file."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_bytes(data)
+        tmp.replace(path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
 
 
 # --------------------------------------------------------------------------
@@ -553,7 +738,7 @@ def main() -> None:
             print(f"  skip (exists): {target.name}", file=sys.stderr)
             continue
         print(f"  downloading PDF: {url[:70]}...", file=sys.stderr)
-        body, ctype, err = fetch_url(url, args.timeout)
+        body, ctype, err, _ = fetch_url(url, args.timeout, max_size=MAX_PDF_SIZE)
         time.sleep(args.delay)
         if body is None:
             manual.append((url, err))
@@ -562,7 +747,7 @@ def main() -> None:
             manual.append((url, "server did not return a PDF "
                                 "(likely a login or landing page)"))
             continue
-        target.write_bytes(body)
+        _atomic_write_bytes(target, body)
         fetched.append(str(target))
 
     # ---- articles --------------------------------------------------------
@@ -579,28 +764,28 @@ def main() -> None:
             print(f"  skip (exists): {existing.name}", file=sys.stderr)
             continue
         print(f"  fetching: {url[:70]}...", file=sys.stderr)
-        body, ctype, err = fetch_url(url, args.timeout)
+        body, ctype, err, _ = fetch_url(url, args.timeout, max_size=MAX_ARTICLE_SIZE)
         time.sleep(args.delay)
         if body is None:
             manual.append((url, err))
             continue
         if body.startswith(b"%PDF"):
             pdf_dir.mkdir(exist_ok=True)
-            pdf_target.write_bytes(body)
+            _atomic_write_bytes(pdf_target, body)
             fetched.append(str(pdf_target))
             continue
 
-        text, title, extractor = extract_article(body)
+        text, title, extractor = extract_article(body, ctype)
         text, title = strip_hidden(text), strip_hidden(title)
         words = len(text.split())
-        raw_html = body.decode("utf-8", errors="replace")
+        raw_html = _decode_body(body, ctype)
         reason = page_looks_gated(raw_html, text, words, min_words=args.min_words)
         if reason:
             manual.append((url, reason))
             continue
-        target.write_text(
-            format_header(url, title, extractor, words, page) + text,
-            encoding="utf-8")
+        _atomic_write_text(
+            target,
+            format_header(url, title, extractor, words, page) + text)
         fetched.append(str(target))
 
     # ---- videos ----------------------------------------------------------
@@ -609,14 +794,14 @@ def main() -> None:
             target = out_dir / (safe_filename(url) + ".txt")
             if target.exists() and not args.overwrite:
                 continue
-            target.write_text(
+            _atomic_write_text(
+                target,
                 "=" * 72 + "\nVIDEO READING - NOT TEXT-EXTRACTABLE\n"
                 + "=" * 72 + f"\n\n  URL: {url}\n"
                 + (f"  Listed on page {page} of the syllabus PDF\n" if page else "")
                 + "\n  This is a video. Watch it directly; no transcript was\n"
                   "  retrieved. If you need a transcript, use the platform's\n"
-                  "  own caption/transcript feature.\n",
-                encoding="utf-8")
+                  "  own caption/transcript feature.\n")
     for page, url in buckets["gated"]:
         manual.append((url, "subscription or institutional login required"))
 
@@ -647,7 +832,7 @@ def main() -> None:
     if buckets["video"] and not args.include_videos:
         lines += ["", "VIDEOS (watch directly; not text)", ""]
         lines += [f"  {u}" for _, u in buckets["video"]]
-    manual_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _atomic_write_text(manual_path, "\n".join(lines) + "\n")
 
     print(f"\n=== Summary ===", file=sys.stderr)
     print(f"  fetched OK:      {len(fetched)}", file=sys.stderr)
