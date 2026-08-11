@@ -227,6 +227,31 @@ class TestEndToEndExtraction:
         assert "BOOK ONE" in index_text
         assert "Chapter 1: The Beginning" in index_text
 
+    @pytest.mark.skipif(
+        shutil.which("tesseract") is None,
+        reason="tesseract not available",
+    )
+    def test_image_only_pdf_gets_ocr_tag(
+        self, image_only_pdf: Path, tmp_path: Path, has_pdftotext: bool
+    ):
+        if not has_pdftotext:
+            pytest.skip("pdftotext not available")
+
+        out_path = tmp_path / "ocr.txt"
+        args = self._dummy_args()
+        result = preprocess_pdf.process_one_pdf(image_only_pdf, out_path, args)
+
+        assert result["pages"] == 1
+        assert result["ocr_pages"] == 1
+        assert result["ocr_pct"] == 100.0
+
+        text = out_path.read_text(encoding="utf-8")
+        assert "--- PAGE 1 [OCR] ---" in text
+        # Tesseract may read "This page is an image" with minor differences,
+        # so check for distinctive words rather than an exact string.
+        assert "page" in text.lower()
+        assert "image" in text.lower() or "mage" in text.lower()
+
     @staticmethod
     def _dummy_args():
         """Return a minimal argparse Namespace for process_one_pdf."""
@@ -240,6 +265,17 @@ class TestEndToEndExtraction:
             no_deskew=False,
             no_header=False,
         )
+
+
+class TestCli:
+    def test_version_flag(self):
+        import subprocess
+        result = subprocess.run(
+            ["python", "preprocess_pdf.py", "--version"],
+            capture_output=True, text=True, cwd=Path(__file__).parent.parent,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "1.1.0" in result.stdout
 
 
 class TestDryRun:

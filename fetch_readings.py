@@ -64,6 +64,14 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
+
+def _version() -> str:
+    """Read the toolkit version from the VERSION file beside this script."""
+    version_file = Path(__file__).with_name("VERSION")
+    if version_file.is_file():
+        return version_file.read_text(encoding="utf-8").strip()
+    return "unknown"
+
 # --------------------------------------------------------------------------
 # URL extraction from PDF
 # --------------------------------------------------------------------------
@@ -451,6 +459,8 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true",
                     help="categorise URLs and report what would be fetched, "
                          "but make no network requests and write no files")
+    ap.add_argument("--version", action="version",
+                    version=f"%(prog)s {_version()}")
     args = ap.parse_args()
 
     if not args.pdf and not args.urls:

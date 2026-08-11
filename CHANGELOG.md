@@ -23,6 +23,11 @@ failures when fetching web readings.
 - `--min-words N` argument to `fetch_readings.py` (default 120), replacing the
   previously hard-coded threshold. Pages below this word count are treated as
   stubs or gates and routed to `MANUAL_CAPTURE.txt`.
+- `--version` flag for both scripts, reporting the version from `VERSION`.
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`) running the test suite
+  on Ubuntu with Python 3.9, 3.11, and latest.
+- OCR integration test that builds an image-only PDF and verifies it is tagged
+  `[OCR]` after tesseract processing.
 
 ### Changed
 - `fetch_readings.py` gate detection now also inspects raw HTML for `<form>`

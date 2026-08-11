@@ -1,5 +1,7 @@
 # ACSC Reading Toolkit
 
+[![CI](https://github.com/RichardDeegan88/Extraction_Tool/actions/workflows/ci.yml/badge.svg)](https://github.com/RichardDeegan88/Extraction_Tool/actions/workflows/ci.yml)
+
 Two scripts for a specific, expensive problem in AI-assisted study: **the
 readings never fully reach the assistant — and it doesn't tell you.** Two ways
 that happens:

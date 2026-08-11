@@ -87,6 +87,14 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
+
+def _version() -> str:
+    """Read the toolkit version from the VERSION file beside this script."""
+    version_file = Path(__file__).with_name("VERSION")
+    if version_file.is_file():
+        return version_file.read_text(encoding="utf-8").strip()
+    return "unknown"
+
 # ---------------------------------------------------------------------------
 # Step 1 — extraction (fallback chain)
 # ---------------------------------------------------------------------------
@@ -1262,6 +1270,8 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true",
                          help="resolve inputs and output paths, report what would be "
                               "processed, but write no files")
+    parser.add_argument("--version", action="version",
+                         version=f"%(prog)s {_version()}")
     args = parser.parse_args()
 
     if args.check:
