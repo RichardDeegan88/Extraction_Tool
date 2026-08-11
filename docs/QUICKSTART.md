@@ -178,6 +178,50 @@ python fetch_readings.py "path\to\syllabus.pdf" --out-dir web_readings
 
 ---
 
+## Limitations and recommended setup
+
+### What this tool cannot do
+
+- **It cannot bypass paywalls or institutional logins.** If a reading is behind
+  a paywall, the tool lists it in `MANUAL_CAPTURE.txt`. You must open that link
+  in a browser where you are already signed in, save the PDF to your computer,
+  and then point this tool at the saved PDF.
+- **It cannot fetch video transcripts.** Video links are skipped unless you use
+  `--include-videos`, which only writes a placeholder note.
+- **It is not a summariser.** It only produces raw text. The AI assistant does
+  the summarising later.
+
+### Recommended storage
+
+Store your original PDFs and the extracted text files in a cloud-synced folder
+so they are backed up and available on every device. Good options:
+
+- **Google Drive** (via Google Drive for Desktop) — see `docs/SETUP.md`.
+- **OneDrive** — built into Windows.
+- **Dropbox**, **iCloud Drive**, or a local external drive.
+
+### Sample folder layout
+
+```
+Semester 1 Readings/                 <- keep this in your cloud-synced folder
+├── Clausewitz_On_War.pdf            <- original, untouched
+├── Sun_Tzu_Art_of_War.pdf
+├── extracted/                       <- created by the tool
+│   ├── Clausewitz_On_War.txt
+│   ├── Clausewitz_On_War.txt.index
+│   ├── Sun_Tzu_Art_of_War.txt
+│   └── Sun_Tzu_Art_of_War.txt.index
+├── web_readings/                    <- created by fetch_readings.py
+│   ├── MANUAL_CAPTURE.txt
+│   └── downloaded_pdfs/
+└── syllabus.pdf
+```
+
+You can delete `extracted/` and `web_readings/` at any time and rebuild them by
+re-running the tool. Never delete the original PDFs unless you have another copy.
+
+---
+
 ## "It didn't work" checklist
 
 | Symptom | Likely fix |
