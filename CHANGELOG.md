@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] - 2026-08-11
 
 ### Security
 - `fetch_readings.py`: URLs are now resolved and rejected before fetching if
@@ -133,5 +133,7 @@ First public release.
   PDF outline) can miss chapters with unusual heading formats and can
   occasionally list a cross-reference. Page markers are always reliable.
 
+[1.2.0]: https://github.com/RichardDeegan88/Extraction_Tool/releases/tag/v1.2.0
+[1.1.0]: https://github.com/RichardDeegan88/Extraction_Tool/releases/tag/v1.1.0
 [1.0.1]: https://github.com/RichardDeegan88/Extraction_Tool/releases/tag/v1.0.1
 [1.0.0]: https://github.com/RichardDeegan88/Extraction_Tool/releases/tag/v1.0.0

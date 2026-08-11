@@ -248,7 +248,7 @@ class TestCli:
             capture_output=True, text=True, cwd=Path(__file__).parent.parent,
         )
         assert result.returncode == 0, result.stderr
-        assert "1.1.0" in result.stdout
+        assert "1.2.0" in result.stdout
 
 
 class TestDryRun:
