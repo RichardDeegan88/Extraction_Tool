@@ -117,6 +117,9 @@ The AI comes later, when you use the extracted text. That part is on you, and
 - **Paywalls and institutional logins are not bypassed.** Save those readings as
   PDFs through your browser, then point `preprocess_pdf.py` at the saved files.
   `fetch_readings.py` writes any gated links to `MANUAL_CAPTURE.txt`.
+- **`fetch_readings.py` fetches only openly available pages.** Paywalled,
+  login-gated, or bot-protected content is listed for manual capture rather than
+  bypassed.
 - **Videos are not transcribed.** Video links are skipped by default.
 - **Output is raw text, not a summary.** The tool only makes the source readable.
 
