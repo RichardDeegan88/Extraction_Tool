@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-08-11
+
+### Fixed
+- `fetch_readings.py`: the balanced-parenthesis URL fix from 1.2.0 was
+  incomplete because `_TEXT_URL_RE` still excluded `)` from URL matches.
+  Wikipedia-style URLs with balanced parentheses are now preserved end-to-end
+  from PDF text extraction through to fetching.
+
 ## [1.2.0] - 2026-08-11
 
 ### Security
@@ -133,6 +141,7 @@ First public release.
   PDF outline) can miss chapters with unusual heading formats and can
   occasionally list a cross-reference. Page markers are always reliable.
 
+[1.2.1]: https://github.com/RichardDeegan88/Extraction_Tool/releases/tag/v1.2.1
 [1.2.0]: https://github.com/RichardDeegan88/Extraction_Tool/releases/tag/v1.2.0
 [1.1.0]: https://github.com/RichardDeegan88/Extraction_Tool/releases/tag/v1.1.0
 [1.0.1]: https://github.com/RichardDeegan88/Extraction_Tool/releases/tag/v1.0.1
