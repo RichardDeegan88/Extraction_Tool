@@ -75,6 +75,7 @@ desktop.ini
 !CLAUDE.md
 !LICENSE
 !requirements.txt
+!requirements-test.txt
 !VERSION
 !docs/*.md
 !.gitignore

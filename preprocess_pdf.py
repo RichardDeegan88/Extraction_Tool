@@ -1259,6 +1259,9 @@ def main() -> None:
                               "then exit without processing anything")
     parser.add_argument("--check", action="store_true",
                          help="report which required/optional tools are installed and exit")
+    parser.add_argument("--dry-run", action="store_true",
+                         help="resolve inputs and output paths, report what would be "
+                              "processed, but write no files")
     args = parser.parse_args()
 
     if args.check:
@@ -1305,6 +1308,7 @@ def main() -> None:
 
     results = []
     skipped = []
+    dry_run_plan: list[tuple[Path, Path, str]] = []  # (pdf, out_path, action)
     used_stems: dict[str, int] = {}
     for pdf_path in pdf_files:
         stem, why = resolve_stem(pdf_path)
@@ -1325,20 +1329,33 @@ def main() -> None:
 
         # Never write over the source PDF — the tool promises it only reads them.
         if out_path.resolve() == pdf_path.resolve():
+            action = "error: would overwrite source PDF"
+            if args.dry_run:
+                dry_run_plan.append((pdf_path, out_path, action))
+                continue
             print(f"\n=== {pdf_path.name} ===", file=sys.stderr)
             print("  [error] refusing to write output over the source PDF; "
                   "choose a different -o/--out-dir path", file=sys.stderr)
             continue
 
         if args.name_from_metadata and stem != pdf_path.stem:
-            print(f"\n=== {pdf_path.name} ===", file=sys.stderr)
-            print(f"  naming from metadata -> {stem}.txt", file=sys.stderr)
+            if not args.dry_run:
+                print(f"\n=== {pdf_path.name} ===", file=sys.stderr)
+                print(f"  naming from metadata -> {stem}.txt", file=sys.stderr)
 
         if out_path.exists() and not args.overwrite:
+            action = "skip: output already exists"
+            if args.dry_run:
+                dry_run_plan.append((pdf_path, out_path, action))
+                continue
             print(f"\n=== {pdf_path.name} ===", file=sys.stderr)
             print(f"  skipping — {out_path} already exists (use --overwrite to redo)",
                   file=sys.stderr)
             skipped.append(pdf_path)
+            continue
+
+        if args.dry_run:
+            dry_run_plan.append((pdf_path, out_path, "process"))
             continue
 
         try:
@@ -1346,6 +1363,19 @@ def main() -> None:
         except Exception as e:
             print(f"  [error] failed on {pdf_path.name}: {type(e).__name__}: {e}",
                   file=sys.stderr)
+
+    if args.dry_run:
+        print(f"\n=== DRY RUN - no files written ===", file=sys.stderr)
+        process_count = sum(1 for _, _, a in dry_run_plan if a == "process")
+        skip_count = sum(1 for _, _, a in dry_run_plan if a.startswith("skip"))
+        error_count = sum(1 for _, _, a in dry_run_plan if a.startswith("error"))
+        for pdf_path, out_path, action in dry_run_plan:
+            print(f"\n=== {pdf_path.name} ===", file=sys.stderr)
+            print(f"  action: {action}", file=sys.stderr)
+            print(f"  output: {out_path}", file=sys.stderr)
+        print(f"\nWould process: {process_count}   skip: {skip_count}   "
+              f"error: {error_count}", file=sys.stderr)
+        return
 
     failed = len(pdf_files) - len(results) - len(skipped)
     print(f"\n=== Summary ===", file=sys.stderr)

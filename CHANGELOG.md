@@ -4,6 +4,37 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-08-10
+
+Improvements focused on testability, operator confidence, and avoiding silent
+failures when fetching web readings.
+
+### Added
+- A `tests/` suite using pytest and synthetic PDF fixtures (no copyrighted
+  books required). It covers sanitization, numeral parsing, page-marker
+  insertion, header/footer stripping, heading detection, quality reporting,
+  metadata handling, end-to-end PDF extraction, URL categorisation, gate
+  detection, and the new `--dry-run` modes. Run it with
+  `pip install -r requirements.txt -r requirements-test.txt && pytest tests/`.
+- `--dry-run` flag for both scripts. `preprocess_pdf.py --dry-run` resolves
+  inputs and output paths and reports what would be processed without writing
+  files. `fetch_readings.py --dry-run` categorises URLs and reports what would
+  be fetched without making network requests or creating the output directory.
+- `--min-words N` argument to `fetch_readings.py` (default 120), replacing the
+  previously hard-coded threshold. Pages below this word count are treated as
+  stubs or gates and routed to `MANUAL_CAPTURE.txt`.
+
+### Changed
+- `fetch_readings.py` gate detection now also inspects raw HTML for `<form>`
+  blocks that look like login/sign-in forms, in addition to the existing
+  phrase-based and word-count checks. This catches more paywall/gate pages
+  before they can be mistaken for the actual reading.
+- `RUN-ME.bat` no longer runs `python preprocess_pdf.py --check` twice. The
+  check output is captured once, printed, and then searched for the missing-tools
+  warning.
+- New `docs/QUICKSTART.md` — a click-by-click guide for non-technical users,
+  linked from `README.md`.
+
 ## [1.0.1] - 2026-08-09
 
 Bug fixes from a code review of the 1.0.0 release. No behavioural changes to

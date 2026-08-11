@@ -45,11 +45,14 @@ if not exist "preprocess_pdf.py" (
 REM ---------- Check required tools ----------
 echo  Checking required tools...
 echo.
-python preprocess_pdf.py --check
+set "CHECK_FILE=%TEMP%\acsc_tool_check_%RANDOM%.txt"
+python preprocess_pdf.py --check > "%CHECK_FILE%" 2>&1
+type "%CHECK_FILE%"
 echo.
 
-python preprocess_pdf.py --check 2>&1 | find "Some required tools are missing" >nul
+find "Some required tools are missing" "%CHECK_FILE%" >nul 2>&1
 if not errorlevel 1 (
+    del "%CHECK_FILE%" >nul 2>&1
     echo  ----------------------------------------------------------
     echo   Some required tools are missing. See docs\SETUP.md.
     echo   Most common fix: Tesseract is installed but not on PATH.
@@ -59,6 +62,7 @@ if not errorlevel 1 (
     if errorlevel 2 exit /b 1
     echo.
 )
+del "%CHECK_FILE%" >nul 2>&1
 
 REM ---------- Work out which folder to process ----------
 set "TARGET=%~1"
