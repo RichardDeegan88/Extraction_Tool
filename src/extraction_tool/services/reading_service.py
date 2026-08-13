@@ -37,20 +37,47 @@ class ReadingService:
         Returns:
             ReadingResult with fetched files, manual capture list, and errors.
         """
+        if request.source and not Path(request.source).is_file():
+            return ReadingResult(
+                success=False,
+                errors=[f"Source PDF not found: {request.source}"],
+            )
+        if request.urls_file and not Path(request.urls_file).is_file():
+            return ReadingResult(
+                success=False,
+                errors=[f"URLs file not found: {request.urls_file}"],
+            )
+
+        buckets = self._bucket_entries(self._collect_entries(request))
+        out_dir = Path(request.out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pdf_dir = out_dir / "downloaded_pdfs"
+
+        fetched: list[str] = []
+        manual: list[tuple[str, str]] = []
+        self._process_pdfs(request, buckets, pdf_dir, fetched, manual)
+        self._process_articles(request, buckets, out_dir, pdf_dir, fetched, manual)
+        self._append_gated(buckets, manual)
+        self._write_manual_capture(request, out_dir, buckets, manual)
+
+        return ReadingResult(
+            success=True,
+            fetched=fetched,
+            manual_capture=manual,
+            downloaded_pdfs=(
+                [str(p) for p in pdf_dir.glob("*.pdf")]
+                if pdf_dir.exists() else []
+            ),
+            skipped=[],
+            errors=[],
+        )
+
+    def _collect_entries(self, request: ReadingRequest) -> list[tuple[int | None, str]]:
+        """Gather (page, url) tuples from the syllabus PDF and URLs file."""
         entries: list[tuple[int | None, str]] = []
         if request.source:
-            if not Path(request.source).is_file():
-                return ReadingResult(
-                    success=False,
-                    errors=[f"Source PDF not found: {request.source}"],
-                )
             entries += self._urls_from_pdf(request.source)
         if request.urls_file:
-            if not Path(request.urls_file).is_file():
-                return ReadingResult(
-                    success=False,
-                    errors=[f"URLs file not found: {request.urls_file}"],
-                )
             for line in Path(request.urls_file).read_text(
                 encoding="utf-8-sig"
             ).splitlines():
@@ -60,7 +87,12 @@ class ReadingService:
                 if not line.lower().startswith(("http://", "https://")):
                     continue
                 entries.append((None, line))
+        return entries
 
+    def _bucket_entries(
+        self, entries: list[tuple[int | None, str]]
+    ) -> dict[str, list[tuple[int | None, str]]]:
+        """Deduplicate and categorise entries into article/pdf/video/gated."""
         seen: set[str] = set()
         unique: list[tuple[int | None, str]] = []
         for page, url in entries:
@@ -73,20 +105,23 @@ class ReadingService:
             "article": [], "pdf": [], "video": [], "gated": []}
         for page, url in unique:
             buckets[self._repo.categorise(url)].append((page, url))
+        return buckets
 
-        out_dir = Path(request.out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        pdf_dir = out_dir / "downloaded_pdfs"
-
-        fetched: list[str] = []
-        manual: list[tuple[str, str]] = []
-
+    def _process_pdfs(
+        self,
+        request: ReadingRequest,
+        buckets: dict[str, list[tuple[int | None, str]]],
+        pdf_dir: Path,
+        fetched: list[str],
+        manual: list[tuple[str, str]],
+    ) -> None:
+        """Download each categorised PDF, recording failures as manual captures."""
         for _, url in buckets["pdf"]:
             pdf_dir.mkdir(exist_ok=True)
             target = pdf_dir / (self._repo.safe_filename(url) + ".pdf")
             if target.exists() and not request.overwrite:
                 continue
-            body, ctype, err, _ = self._repo.fetch_url(
+            body, _ctype, err, _ = self._repo.fetch_url(
                 url, request.timeout, max_size=100 * 1024 * 1024
             )
             time.sleep(request.delay)
@@ -95,11 +130,21 @@ class ReadingService:
                 continue
             if not body.startswith(b"%PDF"):
                 manual.append((url, "server did not return a PDF "
-                                    "(likely a login or landing page)"))
+                                     "(likely a login or landing page)"))
                 continue
             Path(target).write_bytes(body)
             fetched.append(str(target))
 
+    def _process_articles(
+        self,
+        request: ReadingRequest,
+        buckets: dict[str, list[tuple[int | None, str]]],
+        out_dir: Path,
+        pdf_dir: Path,
+        fetched: list[str],
+        manual: list[tuple[str, str]],
+    ) -> None:
+        """Fetch and extract each article, recording gates as manual captures."""
         for page, url in buckets["article"]:
             stem = self._repo.safe_filename(url)
             target = out_dir / (stem + ".txt")
@@ -140,13 +185,29 @@ class ReadingService:
             if reason:
                 manual.append((url, reason))
                 continue
-            header = self._format_header(url, title, extractor, words, page)
+            header = format_reading_header(url, title, extractor, words, page)
             Path(target).write_text(header + text, encoding="utf-8")
             fetched.append(str(target))
 
-        for _, url in buckets["gated"]:
-            manual.append((url, "subscription or institutional login required"))
+    def _append_gated(
+        self,
+        buckets: dict[str, list[tuple[int | None, str]]],
+        bucket_manual: list[tuple[str, str]],
+    ) -> None:
+        """Record gated URLs as manual captures."""
+        bucket_manual.extend(
+            (url, "subscription or institutional login required")
+            for _, url in buckets["gated"]
+        )
 
+    def _write_manual_capture(
+        self,
+        request: ReadingRequest,
+        out_dir: Path,
+        buckets: dict[str, list[tuple[int | None, str]]],
+        manual: list[tuple[str, str]],
+    ) -> None:
+        """Write the MANUAL_CAPTURE.txt report for unfetchable readings."""
         manual_path = out_dir / "MANUAL_CAPTURE.txt"
         lines = [
             "=" * 72,
@@ -175,18 +236,6 @@ class ReadingService:
             lines += [f"  {u}" for _, u in buckets["video"]]
         Path(manual_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-        return ReadingResult(
-            success=True,
-            fetched=fetched,
-            manual_capture=manual,
-            downloaded_pdfs=(
-                [str(p) for p in pdf_dir.glob("*.pdf")]
-                if pdf_dir.exists() else []
-            ),
-            skipped=[],
-            errors=[],
-        )
-
     def _urls_from_pdf(self, pdf_path: str) -> list[tuple[int, str]]:
         """Extract URLs from a PDF's link annotations and visible text."""
         try:
@@ -202,12 +251,6 @@ class ReadingService:
             print(f"Error: could not open {pdf_path}: {type(e).__name__}: {e}",
                   file=sys.stderr)
             sys.exit(1)
-
-        def _trim_url(url: str) -> str:
-            url = url.rstrip(".,;")
-            while url.endswith(")") and url.count("(") < url.count(")"):
-                url = url[:-1]
-            return url
 
         for page_num, page in enumerate(reader.pages, start=1):
             try:
@@ -230,7 +273,7 @@ class ReadingService:
             try:
                 text = page.extract_text() or ""
                 for m in ReadingService._TEXT_URL_RE.finditer(text):
-                    found.append((page_num, _trim_url(m.group(0))))
+                    found.append((page_num, ReadingService._trim_url(m.group(0))))
             except Exception as e:
                 print(f"  [debug] could not extract text from page "
                       f"{page_num}: {type(e).__name__}: {e}", file=sys.stderr)
@@ -367,46 +410,46 @@ class ReadingService:
     _LOGIN_FORM_MARKERS = ("login", "log in", "signin", "sign in", "auth",
                            "password", "passwort", "contraseña")
 
-    @staticmethod
-    def _format_header(url: str, title: str, extractor: str, words: int,
-                       source_page: int | None) -> str:
-        lines = [
-            "=" * 72,
-            f"FETCHED READING - {title or urlparse(url).netloc}",
-            "=" * 72,
-            "",
-            "SOURCE",
-            f"  URL:        {url}",
-            f"  Retrieved:  {time.strftime('%Y-%m-%d %H:%M')}",
-        ]
-        if source_page:
-            lines.append(f"  Listed on:  page {source_page} of the syllabus PDF")
+def format_reading_header(url: str, title: str, extractor: str, words: int,
+                           source_page: int | None) -> str:
+    """Build the saved-reading banner written above fetched article text."""
+    lines = [
+        "=" * 72,
+        f"FETCHED READING - {title or urlparse(url).netloc}",
+        "=" * 72,
+        "",
+        "SOURCE",
+        f"  URL:        {url}",
+        f"  Retrieved:  {time.strftime('%Y-%m-%d %H:%M')}",
+    ]
+    if source_page:
+        lines.append(f"  Listed on:  page {source_page} of the syllabus PDF")
+    lines += [
+        f"  Extractor:  {extractor}",
+        f"  Words:      {words:,}",
+        "",
+    ]
+    if extractor == "built-in stripper":
         lines += [
-            f"  Extractor:  {extractor}",
-            f"  Words:      {words:,}",
+            "WARNING",
+            "  Extracted with the built-in fallback stripper, which is crude",
+            "  and may include navigation or sidebar text. Install trafilatura",
+            "  (pip install trafilatura) and refetch for much cleaner output.",
             "",
         ]
-        if extractor == "built-in stripper":
-            lines += [
-                "WARNING",
-                "  Extracted with the built-in fallback stripper, which is crude",
-                "  and may include navigation or sidebar text. Install trafilatura",
-                "  (pip install trafilatura) and refetch for much cleaner output.",
-                "",
-            ]
-        lines += [
-            "NOTES",
-            "  This is a saved copy of a web page, not an authoritative edition.",
-            "  Web articles have no stable page numbers - cite the URL and the",
-            "  retrieval date above, per your style guide.",
-            "  Verify any direct quotation against the live page before citing.",
-            "",
-            "  This tool does not summarise, paraphrase, or generate text and",
-            "  contains no AI model. Text below is the source page's own words.",
-            "=" * 72,
-            "",
-        ]
-        return "\n".join(lines)
+    lines += [
+        "NOTES",
+        "  This is a saved copy of a web page, not an authoritative edition.",
+        "  Web articles have no stable page numbers - cite the URL and the",
+        "  retrieval date above, per your style guide.",
+        "  Verify any direct quotation against the live page before citing.",
+        "",
+        "  This tool does not summarise, paraphrase, or generate text and",
+        "  contains no AI model. Text below is the source page's own words.",
+        "=" * 72,
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def _extract_article_text(raw: bytes) -> tuple[str, str]:

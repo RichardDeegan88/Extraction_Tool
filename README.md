@@ -166,9 +166,15 @@ pytest tests/
 
 The suite uses synthetic PDF fixtures, so it does not need any copyrighted books.
 
+The two scripts above are thin command-line adapters. The extraction and
+fetching logic now lives in the `src/extraction_tool` package (Data Access
+Factory layout). Contributors should read `ARCHITECTURE.md` for the layer model,
+security invariants, and the Power-of-Ten complexity gates before changing that
+code.
+
 ## Version
 
-v1.1.0 — see `CHANGELOG.md` for release notes and known limits.
+v1.2.1 — see `CHANGELOG.md` for release notes and known limits.
 
 ---
 

@@ -95,10 +95,23 @@ memoization (a `dict`, not `functools.lru_cache`), tracking `iterations` and
 ## Complexity / JPL Power-of-Ten
 
 Functions target ≤50 logical lines. A small number of service/extraction
-functions exceed this (e.g. `ReadingService.acquire_readings`,
-`ExtractionService.extract_pdf`, `format_quality_header`) and are tracked as a
-**decomposition backlog** (see `tests/test_power_of_ten.py` warnings). They are
-bounded, with explicit failure handling and no silent `except: pass`.
+functions exceed this and are tracked as a **decomposition backlog** (see
+`tests/test_power_of_ten.py` warnings). The three large orchestrators
+(`ReadingService.acquire_readings`, `ExtractionService.extract_pdf`,
+`format_quality_header`) were decomposed into focused helpers (<80 lines each);
+the remaining backlog entries are borderline functions where further splitting
+harms readability (argparse-glue CLI mains, linear subprocess/I/O loops):
+
+- `adapters/cli.py::preprocess_pdf_main` (64)
+- `adapters/cli.py::fetch_readings_main` (54)
+- `extraction/ocr.py::ocr_page` (61)
+- `repositories/http.py::fetch_url` (52)
+- `services/extraction_service.py::extract_pdf` (64)
+- `services/reading_service.py::_process_articles` (53)
+- `services/reading_service.py::_urls_from_pdf` (56)
+
+All backlog functions are bounded, with explicit failure handling and no silent
+`except: pass`.
 
 ## Testing
 

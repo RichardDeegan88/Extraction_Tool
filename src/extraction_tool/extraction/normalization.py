@@ -352,7 +352,7 @@ def compute_quality_report(
 
 
 def format_quality_header(report: QualityReport, pdf_name: str,
-                          meta: DocumentMetadata | None = None) -> str:
+                           meta: DocumentMetadata | None = None) -> str:
     """Human-readable quality banner written at the top of every output file."""
     meta = meta or DocumentMetadata()
     lines = [
@@ -361,7 +361,15 @@ def format_quality_header(report: QualityReport, pdf_name: str,
         "=" * 72,
         "",
     ]
+    lines += _format_document_block(meta)
+    lines += _format_quality_report(report)
+    lines += _format_warnings(report)
+    lines += _format_footer()
+    return "\n".join(lines)
 
+
+def _format_document_block(meta: DocumentMetadata) -> list[str]:
+    lines: list[str] = []
     if meta.title or meta.author or meta.year:
         lines.append("DOCUMENT (from the PDF's own metadata)")
         if meta.title:
@@ -381,8 +389,14 @@ def format_quality_header(report: QualityReport, pdf_name: str,
         lines.append("  looks like an internal ID, not a real title, so it was")
         lines.append("  ignored. Take the title from the title page below.")
         lines.append("")
+    return lines
 
-    lines += [
+
+def _format_quality_report(report: QualityReport) -> list[str]:
+    page_count_match = (
+        "COULD NOT VERIFY (no pdfinfo/pypdf)" if not report.pages_expected
+        else ("YES" if report.page_count_ok else "NO - SEE WARNINGS"))
+    return [
         "HOW TO USE THIS FILE",
         "  Page markers ('--- PAGE N ---') correspond to PDF page numbers.",
         "  Pull a range rather than reading the whole file, e.g.:",
@@ -396,9 +410,7 @@ def format_quality_header(report: QualityReport, pdf_name: str,
             f" of {report.pages_expected} reported by the PDF"
             if report.pages_expected else ""
         ),
-        "  Page count matches:   " + (
-            "COULD NOT VERIFY (no pdfinfo/pypdf)" if not report.pages_expected
-            else ("YES" if report.page_count_ok else "NO - SEE WARNINGS")),
+        f"  Page count matches:   {page_count_match}",
         f"  Page order intact:    "
         f"{'YES' if report.sequence_ok else 'NO - SEE WARNINGS'}",
         f"  Blank pages:          {report.blank_pages}",
@@ -408,7 +420,9 @@ def format_quality_header(report: QualityReport, pdf_name: str,
         "",
     ]
 
-    warnings = []
+
+def _format_warnings(report: QualityReport) -> list[str]:
+    warnings: list[str] = []
     if not report.page_count_ok:
         warnings.append(
             "  ! Extracted page count does NOT match the PDF's own count.\n"
@@ -434,11 +448,12 @@ def format_quality_header(report: QualityReport, pdf_name: str,
             "    extraction may have partly failed. Inspect before using.")
 
     if warnings:
-        lines.append("WARNINGS")
-        lines.extend(warnings)
-        lines.append("")
+        return ["WARNINGS", *warnings, ""]
+    return []
 
-    lines += [
+
+def _format_footer() -> list[str]:
+    return [
         "WHAT THIS TOOL DOES AND DOES NOT DO",
         "  This is a deterministic text extractor (pdftotext / pypdf /",
         "  tesseract OCR). It does NOT summarise, paraphrase, or generate",
@@ -454,4 +469,3 @@ def format_quality_header(report: QualityReport, pdf_name: str,
         "=" * 72,
         "",
     ]
-    return "\n".join(lines)
