@@ -37,10 +37,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-test.txt
 
-      - name: Run tests
+      - name: Run tests (includes Power-of-Ten gates)
         run: python -m pytest tests/ -v
 
       - name: Smoke test CLI
         run: |
           python preprocess_pdf.py --check
           python fetch_readings.py --help
+
+  lint:
+    name: Power-of-Ten static gates (ruff + mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-test.txt
+          pip install ruff mypy
+
+      - name: Ruff (Rule 10 — zero lint warnings)
+        run: python -m ruff check src tests
+
+      - name: MyPy (Rule 10 — zero type warnings)
+        run: python -m mypy src
