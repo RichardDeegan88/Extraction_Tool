@@ -11,8 +11,6 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 # Reuse the source-tree scripts as modules.
-import preprocess_pdf
-import fetch_readings
 
 
 @pytest.fixture
@@ -72,13 +70,13 @@ def outline_pdf(tmp_path: Path) -> Path:
     path = tmp_path / "outline.pdf"
 
     try:
-        from pypdf import PdfReader, PdfWriter
+        from pypdf import PdfWriter
     except ImportError:  # pragma: no cover
         pytest.skip("pypdf not installed")
 
     writer = PdfWriter()
-    for i in range(1, 4):
-        page = writer.add_blank_page(width=612, height=792)
+    for _ in range(1, 4):
+        _ = writer.add_blank_page(width=612, height=792)
         # pypdf does not make adding visible text trivial; the outline is the point.
 
     writer.add_outline_item("BOOK ONE", 0)

@@ -57,6 +57,7 @@ env/
 .vscode/
 .idea/
 .claude/
+.kilo/
 *.swp
 *~
 .DS_Store

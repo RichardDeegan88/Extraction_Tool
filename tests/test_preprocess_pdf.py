@@ -186,7 +186,8 @@ class TestAuthorNameNormalization:
             ("Meyer, Jr., David", "David Meyer, Jr."),
             ("Smith, Sr., John", "John Smith, Sr."),
             # Multi-author strings must not be reordered.
-            ("Clausewitz, Carl and Jomini, Antoine", "Clausewitz, Carl and Jomini, Antoine"),
+            ("Clausewitz, Carl and Jomini, Antoine",
+             "Clausewitz, Carl and Jomini, Antoine"),
             # Ambiguous or already-first-name forms fall through unchanged.
             ("Carl Clausewitz", "Carl Clausewitz"),
             ("Smith, John, Jr.", "Smith, John, Jr."),
@@ -198,13 +199,23 @@ class TestAuthorNameNormalization:
         assert preprocess_pdf._normalize_author_for_filename(raw) == expected
 
     def test_build_filename_with_surname_first(self):
-        meta = {"title": "On War", "author": "Clausewitz, Carl", "year": "1832", "title_rejected": ""}
+        meta = {
+            "title": "On War",
+            "author": "Clausewitz, Carl",
+            "year": "1832",
+            "title_rejected": "",
+        }
         stem, why = preprocess_pdf.build_metadata_filename(meta, "on-war")
         assert stem == "Carl Clausewitz - On War (1832)"
         assert why == ""
 
     def test_build_filename_with_suffix_edge_case(self):
-        meta = {"title": "Strategy", "author": "Meyer, Jr., David", "year": "", "title_rejected": ""}
+        meta = {
+            "title": "Strategy",
+            "author": "Meyer, Jr., David",
+            "year": "",
+            "title_rejected": "",
+        }
         stem, why = preprocess_pdf.build_metadata_filename(meta, "strategy")
         assert stem == "David Meyer, Jr. - Strategy"
         assert why == ""
@@ -214,17 +225,27 @@ class TestOcrLangValidation:
     def test_installed_tesseract_langs_parses_output(self):
         stdout = "List of available languages (3):\neng\nlat\ndeu\n"
         with patch.object(
-            subprocess, "run", return_value=__import__("subprocess").CompletedProcess(
-                args=["tesseract", "--list-langs"], returncode=0, stdout=stdout, stderr=""
-            )
+            subprocess,
+            "run",
+            return_value=__import__("subprocess").CompletedProcess(
+                args=["tesseract", "--list-langs"],
+                returncode=0,
+                stdout=stdout,
+                stderr="",
+            ),
         ):
             assert preprocess_pdf._installed_tesseract_langs() == ["eng", "lat", "deu"]
 
     def test_installed_tesseract_langs_returns_empty_on_failure(self):
         with patch.object(
-            subprocess, "run", return_value=__import__("subprocess").CompletedProcess(
-                args=["tesseract", "--list-langs"], returncode=1, stdout="", stderr="error"
-            )
+            subprocess,
+            "run",
+            return_value=__import__("subprocess").CompletedProcess(
+                args=["tesseract", "--list-langs"],
+                returncode=1,
+                stdout="",
+                stderr="error",
+            ),
         ):
             assert preprocess_pdf._installed_tesseract_langs() == []
 
@@ -382,7 +403,7 @@ class TestAtomicWrites:
 
     def test_atomic_write_cleans_temp_on_failure(self, tmp_path: Path):
         target = tmp_path / "missing_dir" / "out.txt"
-        with pytest.raises(Exception):
+        with pytest.raises(OSError):
             preprocess_pdf._atomic_write_text(target, "data")
         assert not target.exists()
         assert not (tmp_path / "out.txt.tmp").exists()

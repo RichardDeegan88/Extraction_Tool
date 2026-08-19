@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import io
 import socket
 import urllib.error
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import fetch_readings
 import pytest
+
+import fetch_readings
 
 
 class TestCategorise:
@@ -77,7 +77,10 @@ class TestGateDetectionStrengthening:
         assert "login form" in fetch_readings.page_looks_gated(html, text, 500)
 
     def test_non_login_form_not_flagged(self):
-        html = '<html><body><form action="/search"><input name="q"></form></body></html>'
+        html = (
+            '<html><body><form action="/search">'
+            '<input name="q"></form></body></html>'
+        )
         text = fetch_readings.html_to_text_builtin(html)
         assert fetch_readings.page_looks_gated(html, text, 500) == ""
 
@@ -128,13 +131,19 @@ class TestPrivateNetworkBlocking:
             assert "private" in reason.lower()
 
     def test_cloud_metadata_blocked(self):
-        with patch("socket.getaddrinfo", return_value=[self._mock_addr("169.254.169.254")]):
+        with patch(
+            "socket.getaddrinfo",
+            return_value=[self._mock_addr("169.254.169.254")],
+        ):
             ok, reason = fetch_readings._is_public_host("169.254.169.254")
             assert ok is False
             assert "link-local" in reason.lower()
 
     def test_public_host_allowed(self):
-        with patch("socket.getaddrinfo", return_value=[self._mock_addr("93.184.216.34")]):
+        with patch(
+            "socket.getaddrinfo",
+            return_value=[self._mock_addr("93.184.216.34")],
+        ):
             ok, reason = fetch_readings._is_public_host("example.com")
             assert ok is True
             assert reason == ""
@@ -163,7 +172,9 @@ class TestBoundedDownloads:
         resp.headers = {}
         if content_length is not None:
             resp.headers["Content-Length"] = str(content_length)
-        resp.read = MagicMock(side_effect=[body[i:i+16] for i in range(0, len(body), 16)] + [b""])
+        resp.read = MagicMock(
+            side_effect=[body[i:i+16] for i in range(0, len(body), 16)] + [b""]
+        )
         return resp
 
     def test_content_length_over_limit_aborts(self):
@@ -228,7 +239,7 @@ class TestAtomicWrites:
     def test_atomic_write_text_no_partial_on_failure(self, tmp_path: Path):
         target = tmp_path / "sub" / "out.txt"
         # Directory does not exist -> write fails, temp should be cleaned.
-        with pytest.raises(Exception):
+        with pytest.raises(OSError):
             fetch_readings._atomic_write_text(target, "hello")
         assert not target.exists()
 
@@ -241,7 +252,7 @@ class TestCharsetDecoding:
         assert "naïve" in text
 
     def test_falls_back_to_utf8(self):
-        body = "hello world".encode("utf-8")
+        body = b"hello world"
         text = fetch_readings._decode_body(body, "text/html")
         assert text == "hello world"
 
