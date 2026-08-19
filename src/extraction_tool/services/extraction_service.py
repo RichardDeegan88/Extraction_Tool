@@ -80,7 +80,8 @@ class ExtractionService:
 
         if out_path:
             self._repo.atomic_write_text(out_path, output_text)
-            self._write_index(out_path, pdf_path, sanitized)
+            self._write_index(out_path, pdf_path, sanitized,
+                               line_offset=header.count("\n"))
 
         return ExtractionResult(
             success=True,
@@ -141,22 +142,60 @@ class ExtractionService:
         method = f"{method} + tesseract OCR ({len(ocr_needed)} page(s))"
         return method, ocr_needed
 
-    def _write_index(self, out_path: Path, pdf_path: str, sanitized: str) -> None:
-        """Write the heading index file alongside the output text."""
+    def _write_index(
+        self,
+        out_path: Path,
+        pdf_path: str,
+        sanitized: str,
+        line_offset: int = 0,
+    ) -> None:
+        """Write the heading index file alongside the output text.
+
+        Prefers the PDF's own embedded outline (bookmarks) when present,
+        falling back to text-pattern heading detection. Line numbers are
+        adjusted to match the final output file (including any quality
+        header that was prepended).
+        """
         index_path = out_path.with_suffix(out_path.suffix + ".index")
-        headings = find_headings(sanitized)
         page_line_map = build_page_line_map(sanitized)
-        index_lines = []
-        for h in headings:
-            page = 0
-            for p, ln in page_line_map.items():
-                if ln <= h.line_number:
-                    page = p
-            index_lines.append(
-                f"  line {h.line_number}, page {page}: {h.text} [{h.level}]"
+        outline = self._repo.extract_pdf_outline(pdf_path)
+        index_lines: list[str] = []
+
+        if outline:
+            # Authoritative structure from the PDF's own bookmarks.
+            source_note = (
+                "SOURCE: the PDF's own embedded outline (bookmarks)."
             )
+            for page, depth, title in outline:
+                clean_title = sanitize(title)[0]
+                line_no = page_line_map.get(page)
+                loc = (
+                    f"line {line_no + line_offset}"
+                    if line_no else f"page {page} (no marker)"
+                )
+                index_lines.append(
+                    f"{'  ' * depth}[p.{page}] {loc}: {clean_title}"
+                )
+        else:
+            # Fallback: text-pattern detection.
+            source_note = (
+                "SOURCE: text-pattern detection. This PDF has NO embedded "
+                "outline, so headings were found by matching text patterns."
+            )
+            headings = find_headings(sanitized)
+            for h in headings:
+                page = 0
+                for p, ln in page_line_map.items():
+                    if ln <= h.line_number:
+                        page = p
+                index_lines.append(
+                    f"  line {h.line_number + line_offset}, page {page}: "
+                    f"{h.text} [{h.level}]"
+                )
+
         self._repo.atomic_write_text(
             index_path,
             f"HEADING INDEX for {Path(pdf_path).name}\n\n"
+            f"{source_note}\n\n"
             + "\n".join(index_lines) + "\n",
         )

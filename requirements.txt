@@ -19,6 +19,11 @@ pypdf>=3.0.0,<7
 # Upper bound guards against major-version API breaks; tested on 2.x.
 trafilatura>=1.6.0,<3
 
+# Refactored package dependencies (mirrors pyproject.toml).
+pydantic>=2.0,<3.0
+fastapi[standard]>=0.141.1
+beautifulsoup4>=4.12
+
 # ---------------------------------------------------------------
 # NOT installable with pip — these are system tools.
 # See docs/SETUP.md.
