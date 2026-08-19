@@ -25,8 +25,8 @@ def _version() -> str:
     return "unknown"
 
 
-def preprocess_pdf_main() -> None:
-    """CLI entry point for PDF preprocessing."""
+def _build_preprocess_parser() -> argparse.ArgumentParser:
+    """Return the ArgumentParser for preprocess_pdf."""
     ap = argparse.ArgumentParser(
         description="Extract complete searchable text from PDFs.")
     ap.add_argument(
@@ -54,6 +54,12 @@ def preprocess_pdf_main() -> None:
                     help="Omit quality header from output")
     ap.add_argument("--version", action="version",
                     version=f"%(prog)s {_version()}")
+    return ap
+
+
+def preprocess_pdf_main() -> None:
+    """CLI entry point for PDF preprocessing."""
+    ap = _build_preprocess_parser()
     args = ap.parse_args()
 
     if args.check:
@@ -68,8 +74,7 @@ def preprocess_pdf_main() -> None:
 
     if args.dry_run:
         print("=== DRY RUN - no files written ===", file=sys.stderr)
-        pdfs = repo.resolve_pdf_inputs(args.inputs)
-        for pdf in pdfs:
+        for pdf in repo.resolve_pdf_inputs(args.inputs):
             print(f"  would process: {pdf}", file=sys.stderr)
         return
 
@@ -91,8 +96,8 @@ def preprocess_pdf_main() -> None:
             sys.exit(1)
 
 
-def fetch_readings_main() -> None:
-    """CLI entry point for reading acquisition."""
+def _build_fetch_readings_parser() -> argparse.ArgumentParser:
+    """Return the ArgumentParser for fetch_readings."""
     ap = argparse.ArgumentParser(
         description="Extract reading URLs from a syllabus PDF and fetch them as text.")
     ap.add_argument("pdf", nargs="?", help="syllabus / reading-list PDF")
@@ -115,6 +120,12 @@ def fetch_readings_main() -> None:
                    help="categorise URLs and report what would be fetched")
     ap.add_argument("--version", action="version",
                     version=f"%(prog)s {_version()}")
+    return ap
+
+
+def fetch_readings_main() -> None:
+    """CLI entry point for reading acquisition."""
+    ap = _build_fetch_readings_parser()
     args = ap.parse_args()
 
     if not args.pdf and not args.urls:

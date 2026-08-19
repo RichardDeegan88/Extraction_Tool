@@ -28,15 +28,8 @@ def _imagemagick_cmd() -> list[str] | None:
     return None
 
 
-def ocr_page(
-    pdf_path: str,
-    page_num: int,
-    dpi: int,
-    lang: str,
-    workdir: str,
-    deskew: bool = True,
-) -> str:
-    """Render a single page to PNG, optionally deskew, and OCR it."""
+def _require_ocr_tools() -> None:
+    """Raise RuntimeError if required OCR binaries are missing."""
     if not shutil.which("pdftoppm"):
         raise RuntimeError(
             "pdftoppm not found (needed for OCR). Install poppler-utils: "
@@ -49,35 +42,63 @@ def ocr_page(
             "macOS: brew install tesseract | "
             "Windows: winget install UB-Mannheim.TesseractOCR (add to PATH)"
         )
+
+
+def _render_page_to_png(
+    pdf_path: str, page_num: int, dpi: int, workdir: str
+) -> str:
+    """Render a single PDF page to a grayscale PNG. Returns the image path."""
     prefix = str(Path(workdir) / f"pg{page_num}")
     subprocess.run(
         ["pdftoppm", "-f", str(page_num), "-l", str(page_num),
          "-r", str(dpi), "-png", "-gray", pdf_path, prefix],
         capture_output=True, timeout=120, check=True,
     )
-    img_path = f"{prefix}-{page_num}.png"
-    if not Path(img_path).is_file():
-        matches = list(Path(workdir).glob(f"pg{page_num}-*.png"))
-        if not matches:
-            raise RuntimeError(f"pdftoppm did not produce an image for page {page_num}")
-        img_path = str(matches[0])
+    expected = f"{prefix}-{page_num}.png"
+    if Path(expected).is_file():
+        return expected
+    matches = list(Path(workdir).glob(f"pg{page_num}-*.png"))
+    if not matches:
+        raise RuntimeError(f"pdftoppm did not produce an image for page {page_num}")
+    return str(matches[0])
 
-    _im = _imagemagick_cmd()
-    if deskew and _im:
-        deskewed_path = f"{prefix}-deskewed.png"
-        try:
-            subprocess.run(
-                _im + [img_path,
-                        "-deskew", "40%",
-                        "-contrast-stretch", "0.5%x0.5%",
-                        deskewed_path],
-                capture_output=True, timeout=60, check=True,
-            )
-            if Path(deskewed_path).is_file():
-                img_path = deskewed_path
-        except Exception as e:
-            print(f"  [debug] deskew skipped for page {page_num}: "
-                  f"{type(e).__name__}: {e}", file=sys.stderr)
+
+def _maybe_deskew(img_path: str, prefix: str, page_num: int) -> str:
+    """Deskew/contrast-stretch *img_path* if ImageMagick is available."""
+    im_cmd = _imagemagick_cmd()
+    if not im_cmd:
+        return img_path
+    deskewed_path = f"{prefix}-deskewed.png"
+    try:
+        subprocess.run(
+            im_cmd + [img_path,
+                      "-deskew", "40%",
+                      "-contrast-stretch", "0.5%x0.5%",
+                      deskewed_path],
+            capture_output=True, timeout=60, check=True,
+        )
+        if Path(deskewed_path).is_file():
+            return deskewed_path
+    except Exception as e:
+        print(f"  [debug] deskew skipped for page {page_num}: "
+              f"{type(e).__name__}: {e}", file=sys.stderr)
+    return img_path
+
+
+def ocr_page(
+    pdf_path: str,
+    page_num: int,
+    dpi: int,
+    lang: str,
+    workdir: str,
+    deskew: bool = True,
+) -> str:
+    """Render a single page to PNG, optionally deskew, and OCR it."""
+    _require_ocr_tools()
+    img_path = _render_page_to_png(pdf_path, page_num, dpi, workdir)
+    if deskew:
+        prefix = str(Path(workdir) / f"pg{page_num}")
+        img_path = _maybe_deskew(img_path, prefix, page_num)
 
     result = subprocess.run(
         ["tesseract", img_path, "stdout", "-l", lang],

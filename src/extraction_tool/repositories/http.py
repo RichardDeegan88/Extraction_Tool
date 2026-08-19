@@ -110,6 +110,43 @@ class HttpReadingRepository:
 
     _OPENER = urllib.request.build_opener(_SafeRedirectHandler)
 
+    @staticmethod
+    def _header_size_limit(
+        resp_headers: dict[str, str], max_size: int
+    ) -> tuple[bytes | None, str, str, str | None] | None:
+        """Return a size-limit error tuple if Content-Length exceeds max_size."""
+        try:
+            content_length = int(resp_headers.get("Content-Length", ""))
+        except ValueError:
+            return None
+        if content_length > max_size:
+            return (
+                None,
+                resp_headers.get("Content-Type", ""),
+                f"response Content-Length ({content_length}) exceeds "
+                f"limit ({max_size})",
+                "size_limit",
+            )
+        return None
+
+    def _read_bounded_body(
+        self, resp: Any, max_size: int | None, content_type: str
+    ) -> tuple[bytes | None, str, str, str | None]:
+        """Read response body, aborting if max_size is exceeded."""
+        body = bytearray()
+        while True:
+            chunk = resp.read(self._DOWNLOAD_CHUNK)
+            if not chunk:
+                break
+            body.extend(chunk)
+            if max_size is not None and len(body) > max_size:
+                return (
+                    None, content_type,
+                    f"response body exceeded {max_size} byte limit",
+                    "size_limit",
+                )
+        return bytes(body), content_type, "", None
+
     def fetch_url(
         self, url: str, timeout: int, max_size: int | None = None
     ) -> tuple[bytes | None, str, str, str | None]:
@@ -132,30 +169,10 @@ class HttpReadingRepository:
             with self._OPENER.open(req, timeout=timeout) as resp:
                 content_type = resp.headers.get("Content-Type", "")
                 if max_size is not None:
-                    try:
-                        content_length = int(resp.headers.get("Content-Length", ""))
-                    except ValueError:
-                        content_length = None
-                    if content_length is not None and content_length > max_size:
-                        return (
-                            None, content_type,
-                            f"response Content-Length ({content_length}) exceeds "
-                            f"limit ({max_size})",
-                            "size_limit",
-                        )
-                body = bytearray()
-                while True:
-                    chunk = resp.read(self._DOWNLOAD_CHUNK)
-                    if not chunk:
-                        break
-                    body.extend(chunk)
-                    if max_size is not None and len(body) > max_size:
-                        return (
-                            None, content_type,
-                            f"response body exceeded {max_size} byte limit",
-                            "size_limit",
-                        )
-                return bytes(body), content_type, "", None
+                    limit = self._header_size_limit(resp.headers, max_size)
+                    if limit is not None:
+                        return limit
+                return self._read_bounded_body(resp, max_size, content_type)
         except urllib.error.HTTPError as e:
             return None, "", f"HTTP {e.code} {e.reason}", None
         except urllib.error.URLError as e:

@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -151,31 +152,13 @@ class ReadingService:
             pdf_target = pdf_dir / (stem + ".pdf")
             if not request.overwrite and (target.exists() or pdf_target.exists()):
                 continue
-            if request.use_browser:
-                html, err = self._repo.fetch_rendered_html(
-                    url, request.browser_timeout)
-                time.sleep(request.delay)
-                if not html:
-                    manual.append((url, err or "browser returned no content"))
-                    continue
-                raw_html = html
-                text, title, extractor = self._extract_article(
-                    html.encode("utf-8"), "")
-            else:
-                body, ctype, err, _ = self._repo.fetch_url(
-                    url, request.timeout, max_size=10 * 1024 * 1024
-                )
-                time.sleep(request.delay)
-                if body is None:
-                    manual.append((url, err))
-                    continue
-                if body.startswith(b"%PDF"):
-                    pdf_dir.mkdir(exist_ok=True)
-                    Path(pdf_target).write_bytes(body)
-                    fetched.append(str(pdf_target))
-                    continue
-                text, title, extractor = self._extract_article(body, ctype)
-                raw_html = body.decode("utf-8", errors="replace")
+            source = _fetch_article_source(
+                self._repo, self._extract_article, request, url, pdf_dir,
+                fetched, manual,
+            )
+            if source is None:
+                continue
+            text, title, extractor, raw_html = source
             text, _ = sanitize(text)
             title, _ = sanitize(title)
             words = len(text.split())
@@ -486,3 +469,42 @@ def _extract_article_text(raw: bytes) -> tuple[str, str]:
               f"built-in stripper: {type(e).__name__}: {e}", file=sys.stderr)
 
     return ReadingService._html_to_text_builtin(raw_html), "built-in stripper"
+
+
+def _fetch_article_source(
+    repo: HttpReadingRepository,
+    extract_article: Callable[[bytes, str], tuple[str, str, str]],
+    request: ReadingRequest,
+    url: str,
+    pdf_dir: Path,
+    fetched: list[str],
+    manual: list[tuple[str, str]],
+) -> tuple[str, str, str, str] | None:
+    """Fetch article source and return (text, title, extractor, raw_html).
+
+    Returns None if the URL was handled (saved as PDF or recorded as manual).
+    """
+    if request.use_browser:
+        html, err = repo.fetch_rendered_html(url, request.browser_timeout)
+        time.sleep(request.delay)
+        if not html:
+            manual.append((url, err or "browser returned no content"))
+            return None
+        text, title, extractor = extract_article(html.encode("utf-8"), "")
+        return text, title, extractor, html
+
+    body, ctype, err, _ = repo.fetch_url(
+        url, request.timeout, max_size=10 * 1024 * 1024
+    )
+    time.sleep(request.delay)
+    if body is None:
+        manual.append((url, err))
+        return None
+    if body.startswith(b"%PDF"):
+        pdf_dir.mkdir(exist_ok=True)
+        pdf_target = pdf_dir / (repo.safe_filename(url) + ".pdf")
+        Path(pdf_target).write_bytes(body)
+        fetched.append(str(pdf_target))
+        return None
+    text, title, extractor = extract_article(body, ctype)
+    return text, title, extractor, body.decode("utf-8", errors="replace")

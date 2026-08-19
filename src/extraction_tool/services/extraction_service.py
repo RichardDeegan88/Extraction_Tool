@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 from extraction_tool.contracts.extraction import ExtractionRequest, ExtractionResult
-from extraction_tool.contracts.results import DocumentMetadata
+from extraction_tool.contracts.results import DocumentMetadata, QualityReport
 from extraction_tool.extraction.normalization import (
     build_page_line_map,
     clean_and_mark_pages,
@@ -31,6 +31,56 @@ class ExtractionService:
     def __init__(self, repo: FilesystemRepository) -> None:
         """Initialize with a filesystem repository."""
         self._repo = repo
+
+    def _sanitize_metadata(self, meta: dict[str, str]) -> dict[str, str]:
+        """Sanitize title/author metadata strings."""
+        for key in ("title", "author"):
+            if meta.get(key):
+                meta[key] = sanitize(meta[key])[0]
+        return meta
+
+    def _build_output(
+        self,
+        sanitized: str,
+        report: QualityReport,
+        meta: dict[str, str],
+        pdf_path: str,
+        no_header: bool,
+    ) -> tuple[str, str]:
+        """Return (output_text, header) for the extraction result."""
+        header = (
+            ""
+            if no_header
+            else format_quality_header(
+                report, Path(pdf_path).name, DocumentMetadata(**meta)
+            )
+        )
+        return header + sanitized, header
+
+    def _prepare_text(
+        self, pages: list[str], ocr_needed: list[int]
+    ) -> str:
+        """Clean, mark, and sanitize extracted/ocr'd page text."""
+        cleaned = clean_and_mark_pages("\f".join(pages), ocr_pages=set(ocr_needed))
+        sanitized, removed_count = sanitize(cleaned)
+        if removed_count:
+            print(f"  stripped {removed_count} invisible/bidi/tag characters "
+                  f"(possible hidden content or PDF artifacts)", file=sys.stderr)
+        return sanitized
+
+    def _persist_outputs(
+        self,
+        out_path: Path,
+        output_text: str,
+        pdf_path: str,
+        sanitized: str,
+        header: str,
+    ) -> None:
+        """Write the extracted text file and heading index."""
+        self._repo.atomic_write_text(out_path, output_text)
+        self._write_index(
+            out_path, pdf_path, sanitized, line_offset=header.count("\n")
+        )
 
     def extract_pdf(
         self,
@@ -57,31 +107,17 @@ class ExtractionService:
 
         total_pages = count_pages(pdf_path)
         pages, method = extract_pages_any(pdf_path, total_pages)
-
         method, ocr_needed = self._run_ocr(pages, pdf_path, request, method)
-
-        cleaned = clean_and_mark_pages("\f".join(pages), ocr_pages=set(ocr_needed))
-        sanitized, removed_count = sanitize(cleaned)
-        if removed_count:
-            print(f"  stripped {removed_count} invisible/bidi/tag characters "
-                  f"(possible hidden content or PDF artifacts)", file=sys.stderr)
+        sanitized = self._prepare_text(pages, ocr_needed)
 
         report = compute_quality_report(sanitized, ocr_needed, total_pages)
-        meta = self._repo.extract_pdf_metadata(pdf_path)
-        for _k in ("title", "author"):
-            if meta.get(_k):
-                meta[_k] = sanitize(meta[_k])[0]
-
-        header = ("" if no_header
-                  else format_quality_header(report, Path(pdf_path).name,
-                                             DocumentMetadata(**meta)))
-
-        output_text = header + sanitized
+        meta = self._sanitize_metadata(self._repo.extract_pdf_metadata(pdf_path))
+        output_text, header = self._build_output(
+            sanitized, report, meta, pdf_path, no_header
+        )
 
         if out_path:
-            self._repo.atomic_write_text(out_path, output_text)
-            self._write_index(out_path, pdf_path, sanitized,
-                               line_offset=header.count("\n"))
+            self._persist_outputs(out_path, output_text, pdf_path, sanitized, header)
 
         return ExtractionResult(
             success=True,
@@ -142,6 +178,43 @@ class ExtractionService:
         method = f"{method} + tesseract OCR ({len(ocr_needed)} page(s))"
         return method, ocr_needed
 
+    def _format_outline_entries(
+        self,
+        outline: list[tuple[int, int, str]],
+        page_line_map: dict[int, int],
+        line_offset: int,
+    ) -> list[str]:
+        """Format embedded PDF outline entries as index lines."""
+        lines: list[str] = []
+        for page, depth, title in outline:
+            clean_title = sanitize(title)[0]
+            line_no = page_line_map.get(page)
+            loc = (
+                f"line {line_no + line_offset}"
+                if line_no else f"page {page} (no marker)"
+            )
+            lines.append(f"{'  ' * depth}[p.{page}] {loc}: {clean_title}")
+        return lines
+
+    def _format_detected_headings(
+        self,
+        sanitized: str,
+        page_line_map: dict[int, int],
+        line_offset: int,
+    ) -> list[str]:
+        """Format text-pattern headings as index lines."""
+        lines: list[str] = []
+        for h in find_headings(sanitized):
+            page = 0
+            for p, ln in page_line_map.items():
+                if ln <= h.line_number:
+                    page = p
+            lines.append(
+                f"  line {h.line_number + line_offset}, page {page}: "
+                f"{h.text} [{h.level}]"
+            )
+        return lines
+
     def _write_index(
         self,
         out_path: Path,
@@ -159,39 +232,20 @@ class ExtractionService:
         index_path = out_path.with_suffix(out_path.suffix + ".index")
         page_line_map = build_page_line_map(sanitized)
         outline = self._repo.extract_pdf_outline(pdf_path)
-        index_lines: list[str] = []
 
         if outline:
-            # Authoritative structure from the PDF's own bookmarks.
-            source_note = (
-                "SOURCE: the PDF's own embedded outline (bookmarks)."
+            source_note = "SOURCE: the PDF's own embedded outline (bookmarks)."
+            index_lines = self._format_outline_entries(
+                outline, page_line_map, line_offset
             )
-            for page, depth, title in outline:
-                clean_title = sanitize(title)[0]
-                line_no = page_line_map.get(page)
-                loc = (
-                    f"line {line_no + line_offset}"
-                    if line_no else f"page {page} (no marker)"
-                )
-                index_lines.append(
-                    f"{'  ' * depth}[p.{page}] {loc}: {clean_title}"
-                )
         else:
-            # Fallback: text-pattern detection.
             source_note = (
                 "SOURCE: text-pattern detection. This PDF has NO embedded "
                 "outline, so headings were found by matching text patterns."
             )
-            headings = find_headings(sanitized)
-            for h in headings:
-                page = 0
-                for p, ln in page_line_map.items():
-                    if ln <= h.line_number:
-                        page = p
-                index_lines.append(
-                    f"  line {h.line_number + line_offset}, page {page}: "
-                    f"{h.text} [{h.level}]"
-                )
+            index_lines = self._format_detected_headings(
+                sanitized, page_line_map, line_offset
+            )
 
         self._repo.atomic_write_text(
             index_path,
