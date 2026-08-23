@@ -480,7 +480,8 @@ class TestOutputPathResolution:
         if not has_pdftotext:
             pytest.skip("pdftotext not available")
         a, b = tmp_path / "a", tmp_path / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         shutil.copy(simple_pdf, a / "book.pdf")
         shutil.copy(simple_pdf, b / "book.pdf")
         out_dir = tmp_path / "out"

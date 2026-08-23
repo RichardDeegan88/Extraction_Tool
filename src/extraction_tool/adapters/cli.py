@@ -9,7 +9,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from extraction_tool.contracts.extraction import ExtractionRequest
+from extraction_tool.contracts.extraction import ExtractionRequest, ExtractionResult
 from extraction_tool.contracts.readings import ReadingRequest
 from extraction_tool.extraction.ocr import check_dependencies
 from extraction_tool.repositories.filesystem import FilesystemRepository
@@ -78,7 +78,7 @@ def _resolve_out_path(args: argparse.Namespace, pdf_path: Path,
     return pdf_path.with_name(stem + ".txt")
 
 
-def _report_extraction(out_path: Path, result) -> None:
+def _report_extraction(out_path: Path, result: ExtractionResult) -> None:
     """Print a one-line quality summary for a written file."""
     flags = []
     if not result.page_count_ok:
