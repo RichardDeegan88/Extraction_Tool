@@ -435,7 +435,6 @@ class TestOutputPathResolution:
 
     @staticmethod
     def _run(*cli_args: str):
-        import subprocess
         return subprocess.run(
             ["python", "preprocess_pdf.py", *cli_args],
             capture_output=True, text=True, cwd=Path(__file__).parent.parent,
@@ -472,3 +471,22 @@ class TestOutputPathResolution:
         second = self._run(str(simple_pdf), "--out-dir", str(out_dir))
         assert second.returncode == 0, second.stderr
         assert "skipping" in second.stderr
+
+    def test_out_dir_disambiguates_same_stem(
+        self, simple_pdf: Path, tmp_path: Path, has_pdftotext: bool
+    ):
+        # Two different PDFs sharing a filename in different subfolders must not
+        # collapse to one --out-dir output (the second would be silently skipped).
+        if not has_pdftotext:
+            pytest.skip("pdftotext not available")
+        a, b = tmp_path / "a", tmp_path / "b"
+        a.mkdir(); b.mkdir()
+        shutil.copy(simple_pdf, a / "book.pdf")
+        shutil.copy(simple_pdf, b / "book.pdf")
+        out_dir = tmp_path / "out"
+        result = self._run(str(a / "book.pdf"), str(b / "book.pdf"),
+                           "--out-dir", str(out_dir))
+        assert result.returncode == 0, result.stderr
+        names = sorted(p.name for p in out_dir.glob("*.txt"))
+        assert names == ["book (2).txt", "book.txt"], \
+            f"got {names}; stderr={result.stderr}"
