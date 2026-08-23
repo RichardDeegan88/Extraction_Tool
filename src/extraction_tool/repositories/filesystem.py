@@ -87,6 +87,7 @@ class FilesystemRepository:
             try:
                 result = subprocess.run(
                     ["pdfinfo", pdf_path], capture_output=True, text=True, timeout=30,
+                    encoding="utf-8", errors="replace",
                 )
                 for line in result.stdout.splitlines():
                     if line.startswith("Pages:"):
