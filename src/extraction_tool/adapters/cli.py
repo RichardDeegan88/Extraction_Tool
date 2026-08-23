@@ -158,7 +158,7 @@ def preprocess_pdf_main() -> None:
     if not args.inputs:
         ap.error("give at least one PDF, directory, or glob pattern")
 
-    repo = FilesystemRepository(out_dir=args.out_dir)
+    repo = FilesystemRepository()
     service = ExtractionService(repo)
     pdf_files = repo.resolve_pdf_inputs(args.inputs)
 

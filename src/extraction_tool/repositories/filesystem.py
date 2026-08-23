@@ -20,14 +20,6 @@ class FilesystemRepository:
     - Reading/writing metadata and index files
     """
 
-    def __init__(self, out_dir: str | None = None) -> None:
-        """Initialize the filesystem repository.
-
-        Args:
-            out_dir: Default output directory for extracted text.
-        """
-        self._out_dir = Path(out_dir) if out_dir else None
-
     async def get(self, key: str) -> Any:
         """Not used for filesystem repository."""
         raise NotImplementedError("FilesystemRepository does not support get()")
