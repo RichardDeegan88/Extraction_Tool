@@ -423,3 +423,52 @@ class TestDryRun:
         assert "DRY RUN" in result.stderr
         # No .txt or .index files should be created.
         assert not any(out_dir.glob("*"))
+
+
+class TestOutputPathResolution:
+    """Regression: a real (non-dry) run must actually write output.
+
+    A DAF-refactor regression once left the CLI resolving an output path only
+    for -o/--out, so --out-dir (and the default beside-source path) produced no
+    file while the process still exited 0 — a silent no-op.
+    """
+
+    @staticmethod
+    def _run(*cli_args: str):
+        import subprocess
+        return subprocess.run(
+            ["python", "preprocess_pdf.py", *cli_args],
+            capture_output=True, text=True, cwd=Path(__file__).parent.parent,
+        )
+
+    def test_out_dir_writes_named_output(
+        self, simple_pdf: Path, tmp_path: Path, has_pdftotext: bool
+    ):
+        if not has_pdftotext:
+            pytest.skip("pdftotext not available")
+        out_dir = tmp_path / "extracted"
+        result = self._run(str(simple_pdf), "--out-dir", str(out_dir))
+        assert result.returncode == 0, result.stderr
+        expected = out_dir / (simple_pdf.stem + ".txt")
+        assert expected.exists(), f"no output written; stderr={result.stderr}"
+        assert "--- PAGE 1 ---" in expected.read_text(encoding="utf-8")
+
+    def test_default_writes_beside_source(
+        self, simple_pdf: Path, has_pdftotext: bool
+    ):
+        if not has_pdftotext:
+            pytest.skip("pdftotext not available")
+        result = self._run(str(simple_pdf))
+        assert result.returncode == 0, result.stderr
+        assert simple_pdf.with_suffix(".txt").exists()
+
+    def test_existing_output_skipped_without_overwrite(
+        self, simple_pdf: Path, tmp_path: Path, has_pdftotext: bool
+    ):
+        if not has_pdftotext:
+            pytest.skip("pdftotext not available")
+        out_dir = tmp_path / "extracted"
+        assert self._run(str(simple_pdf), "--out-dir", str(out_dir)).returncode == 0
+        second = self._run(str(simple_pdf), "--out-dir", str(out_dir))
+        assert second.returncode == 0, second.stderr
+        assert "skipping" in second.stderr
