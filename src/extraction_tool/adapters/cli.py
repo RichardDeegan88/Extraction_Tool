@@ -9,7 +9,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from extraction_tool.contracts.extraction import ExtractionRequest
+from extraction_tool.contracts.extraction import ExtractionRequest, ExtractionResult
 from extraction_tool.contracts.readings import ReadingRequest
 from extraction_tool.extraction.ocr import check_dependencies
 from extraction_tool.repositories.filesystem import FilesystemRepository
@@ -57,6 +57,95 @@ def _build_preprocess_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _resolve_out_path(args: argparse.Namespace, pdf_path: Path,
+                      used_stems: dict[str, int]) -> Path:
+    """Where the .txt for this PDF goes: explicit -o, else --out-dir/<stem>.txt,
+    else <stem>.txt beside the source PDF.
+
+    When --out-dir flattens a recursive tree, two PDFs in different subfolders
+    can share a stem; disambiguate with a counter so neither is silently
+    skipped as "already exists".
+    """
+    if args.out:
+        return Path(args.out)
+    stem = pdf_path.stem
+    if args.out_dir:
+        seen = used_stems.get(stem.lower(), 0)
+        used_stems[stem.lower()] = seen + 1
+        if seen:
+            stem = f"{stem} ({seen + 1})"
+        return Path(args.out_dir) / (stem + ".txt")
+    return pdf_path.with_name(stem + ".txt")
+
+
+def _report_extraction(out_path: Path, result: ExtractionResult) -> None:
+    """Print a one-line quality summary for a written file."""
+    flags = []
+    if not result.page_count_ok:
+        flags.append(f"PAGE COUNT {result.pages_found}/{result.pages_expected}")
+    if not result.sequence_ok:
+        flags.append("PAGE ORDER BROKEN")
+    if result.ocr_pct > 50:
+        flags.append(f"{result.ocr_pct:.0f}% OCR")
+    if result.words_per_page < 50 and result.pages_found > 5:
+        flags.append("LOW TEXT DENSITY")
+    suffix = ("  [!] " + "; ".join(flags)) if flags else ""
+    print(f"  wrote {out_path}  ({result.words:,} words, "
+          f"{result.pages_found} pages, {result.ocr_pct:.1f}% OCR){suffix}",
+          file=sys.stderr)
+
+
+def _extract_one(service: ExtractionService, args: argparse.Namespace,
+                 pdf_path: Path, out_path: Path) -> bool:
+    """Extract a single PDF to out_path. Returns False on any failure (write
+    error, extraction error, or empty output); a clean skip of an already-
+    extracted file counts as success. One bad PDF never aborts the batch.
+    """
+    # The tool only ever reads source PDFs — never write over one.
+    if out_path.resolve() == pdf_path.resolve():
+        print(f"  [error] refusing to write output over the source PDF: "
+              f"{pdf_path}", file=sys.stderr)
+        return False
+
+    # Idempotent re-runs: skip already-extracted files unless --overwrite.
+    if out_path.exists() and not args.overwrite:
+        print(f"  skipping — {out_path.name} already exists "
+              f"(use --overwrite to redo)", file=sys.stderr)
+        return True
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    request = ExtractionRequest(
+        pdf_path=str(pdf_path),
+        ocr_lang=args.ocr_lang,
+        ocr_dpi=args.ocr_dpi,
+        ocr_threshold=args.ocr_threshold,
+        force_ocr=args.force_ocr,
+        no_deskew=args.no_deskew,
+    )
+    try:
+        result = service.extract_pdf(request, out_path=out_path,
+                                     no_header=args.no_header)
+    except Exception as e:  # noqa: BLE001 - one bad PDF must not kill the batch
+        print(f"  [error] failed on {pdf_path.name}: "
+              f"{type(e).__name__}: {e}", file=sys.stderr)
+        return False
+
+    if not result.success:
+        print(f"Error processing {pdf_path}: {result.errors[0]}", file=sys.stderr)
+        return False
+
+    _report_extraction(out_path, result)
+
+    # A PDF that "succeeded" with zero words is corrupt/image-only — signal
+    # failure via exit code so launchers/CI never treat it as a good extraction.
+    if result.words == 0:
+        print(f"  [warning] {out_path.name} has no extractable text — the "
+              f"source PDF may be corrupt or unreadable", file=sys.stderr)
+        return False
+
+    return True
+
+
 def preprocess_pdf_main() -> None:
     """CLI entry point for PDF preprocessing."""
     ap = _build_preprocess_parser()
@@ -69,31 +158,28 @@ def preprocess_pdf_main() -> None:
     if not args.inputs:
         ap.error("give at least one PDF, directory, or glob pattern")
 
-    repo = FilesystemRepository(out_dir=args.out_dir)
+    repo = FilesystemRepository()
     service = ExtractionService(repo)
+    pdf_files = repo.resolve_pdf_inputs(args.inputs)
+
+    if args.out and len(pdf_files) > 1:
+        ap.error("-o/--out writes a single file; use --out-dir for multiple PDFs")
 
     if args.dry_run:
         print("=== DRY RUN - no files written ===", file=sys.stderr)
-        for pdf in repo.resolve_pdf_inputs(args.inputs):
+        for pdf in pdf_files:
             print(f"  would process: {pdf}", file=sys.stderr)
         return
 
-    for pdf_path in repo.resolve_pdf_inputs(args.inputs):
-        out_path = Path(args.out) if args.out else None
-        request = ExtractionRequest(
-            pdf_path=str(pdf_path),
-            ocr_lang=args.ocr_lang,
-            ocr_dpi=args.ocr_dpi,
-            ocr_threshold=args.ocr_threshold,
-            force_ocr=args.force_ocr,
-            no_deskew=args.no_deskew,
-        )
-        result = service.extract_pdf(
-            request, out_path=out_path, no_header=args.no_header
-        )
-        if not result.success:
-            print(f"Error processing {pdf_path}: {result.errors[0]}", file=sys.stderr)
-            sys.exit(1)
+    # Process every PDF; one failure sets a non-zero exit without aborting rest.
+    used_stems: dict[str, int] = {}
+    ok = True
+    for pdf_path in pdf_files:
+        out_path = _resolve_out_path(args, pdf_path, used_stems)
+        if not _extract_one(service, args, pdf_path, out_path):
+            ok = False
+    if not ok:
+        sys.exit(1)
 
 
 def _build_fetch_readings_parser() -> argparse.ArgumentParser:
