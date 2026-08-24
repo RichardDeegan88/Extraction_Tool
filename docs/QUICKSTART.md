@@ -38,7 +38,9 @@ You do **not** need a programming background.
 3. Run the downloaded installer.
 4. **Important:** on the first screen, tick the box that says **"Add Python to
    PATH"**. It is small and easy to miss.
-5. Click **Install Now**.
+5. The toolkit needs **Python 3.12 or newer**. If the installer offers an older
+   version, download 3.12+ from the downloads page instead.
+6. Click **Install Now**.
 
 ### Step 2: Install the toolkit tools
 
@@ -105,7 +107,7 @@ Follow the prompts.
 
 ### Step 2: Install the toolkit tools
 
-In Terminal, paste these two commands:
+In Terminal, paste these two commands (the toolkit needs Python 3.12 or newer):
 
 ```bash
 brew install poppler tesseract imagemagick
@@ -126,7 +128,8 @@ pip3 install -r requirements.txt
 
 ## Linux — step by step
 
-Open a terminal in the toolkit folder and run:
+Open a terminal in the toolkit folder and run (the toolkit needs Python 3.12
+or newer):
 
 ```bash
 sudo apt install poppler-utils tesseract-ocr imagemagick
@@ -166,11 +169,12 @@ reliable. If it flags problems, see `docs/QUALITY.md`.
 
 If your reading list has links instead of PDFs:
 
-1. Find your syllabus PDF.
-2. In PowerShell / Terminal, run:
+1. Find your syllabus PDF, *or* make a plain text file with one URL per line.
+2. In PowerShell / Terminal, run one of:
 
 ```powershell
 python fetch_readings.py "path\to\syllabus.pdf" --out-dir web_readings
+python fetch_readings.py --urls urls.txt --out-dir web_readings
 ```
 
 3. The tool downloads what it can and writes a `MANUAL_CAPTURE.txt` file

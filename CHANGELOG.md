@@ -66,7 +66,7 @@ failures when fetching web readings.
   stubs or gates and routed to `MANUAL_CAPTURE.txt`.
 - `--version` flag for both scripts, reporting the version from `VERSION`.
 - GitHub Actions CI workflow (`.github/workflows/ci.yml`) running the test suite
-  on Ubuntu with Python 3.9, 3.11, and latest.
+  on Ubuntu with Python 3.12, 3.13, and latest.
 - OCR integration test that builds an image-only PDF and verifies it is tagged
   `[OCR]` after tesseract processing.
 
@@ -135,8 +135,7 @@ First public release.
 ### Known limitations
 - `RUN-ME.bat` has been exercised on one Windows machine only.
 - `fetch_readings.py` has had one full production run.
-- Python 3.9 compatibility is reasoned from the code, not tested; verified
-  working on 3.14.
+- Requires Python 3.12 or newer; verified working on 3.14.
 - Chapter indexes built by text-pattern matching (rather than from an embedded
   PDF outline) can miss chapters with unusual heading formats and can
   occasionally list a cross-reference. Page markers are always reliable.
