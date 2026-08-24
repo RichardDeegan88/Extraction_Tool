@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+import sys
 import urllib.error
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -261,7 +262,7 @@ class TestCli:
     def test_version_flag(self):
         import subprocess
         result = subprocess.run(
-            ["python", "fetch_readings.py", "--version"],
+            [sys.executable, "fetch_readings.py", "--version"],
             capture_output=True, text=True, cwd=Path(__file__).parent.parent,
         )
         assert result.returncode == 0, result.stderr
@@ -280,7 +281,7 @@ class TestDryRun:
         out_dir = tmp_path / "readings"
         import subprocess
         result = subprocess.run(
-            ["python", "fetch_readings.py", "--urls", str(urls_path),
+            [sys.executable, "fetch_readings.py", "--urls", str(urls_path),
              "--out-dir", str(out_dir), "--dry-run"],
             capture_output=True, text=True, cwd=Path(__file__).parent.parent,
         )

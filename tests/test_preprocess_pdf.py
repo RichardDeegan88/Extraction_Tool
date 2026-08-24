@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -387,7 +388,7 @@ class TestCli:
     def test_version_flag(self):
         import subprocess
         result = subprocess.run(
-            ["python", "preprocess_pdf.py", "--version"],
+            [sys.executable, "preprocess_pdf.py", "--version"],
             capture_output=True, text=True, cwd=Path(__file__).parent.parent,
         )
         assert result.returncode == 0, result.stderr
@@ -415,7 +416,7 @@ class TestDryRun:
         # Use subprocess to exercise the CLI argument parsing.
         import subprocess
         result = subprocess.run(
-            ["python", "preprocess_pdf.py", str(simple_pdf),
+            [sys.executable, "preprocess_pdf.py", str(simple_pdf),
              "--out-dir", str(out_dir), "--dry-run"],
             capture_output=True, text=True, cwd=Path(__file__).parent.parent,
         )
@@ -436,7 +437,7 @@ class TestOutputPathResolution:
     @staticmethod
     def _run(*cli_args: str):
         return subprocess.run(
-            ["python", "preprocess_pdf.py", *cli_args],
+            [sys.executable, "preprocess_pdf.py", *cli_args],
             capture_output=True, text=True, cwd=Path(__file__).parent.parent,
         )
 
