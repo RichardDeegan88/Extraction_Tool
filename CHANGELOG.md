@@ -4,6 +4,42 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- A typed, non-network planning operation (`ReadingService.plan_readings`)
+  that discovers and deduplicates syllabus URLs while preserving every
+  source-page occurrence.
+- `--list-only` flag for `fetch_readings.py`: prints the categorised URL list
+  and exits without making network calls or creating files.
+- `--gated-host` flag (repeatable) for adding institutional resolver hosts
+  that should be routed to manual capture.
+- Known Primo/Ex Libris resolver hosts (`primo.exlibrisgroup.com`,
+  `aul.primo.exlibrisgroup.com`) are now recognised as gated sources.
+- Explicit acquisition counts in `ReadingResult`:
+  discovered, fetched, downloaded PDFs, skipped, manual captures, videos, and
+  unexpected errors.
+- Failure classes in `MANUAL_CAPTURE.txt` so expected access restrictions are
+  separated from technical failures (e.g. `dns_failure`, `network_failure`,
+  `http_failure`, `institutional_login`, `insufficient_content`).
+
+### Changed
+- `--dry-run` now actually inspects the syllabus/URL file, categorises URLs,
+  and reports what would be fetched. It performs no network or filesystem I/O.
+- `--list-only` is no longer ignored; it is handled by the shared planner.
+- `fetch_readings.py` now always prints an acquisition summary and uses
+  documented exit codes (`0` success, `2` partial, `1` fatal/no URLs).
+- Repeated URLs are fetched once but reported with every syllabus page where
+  they appear.
+- `MANUAL_CAPTURE.txt` now includes category, failure class, exact reason, and
+  all source pages for each entry.
+
+### Fixed
+- Acquisition runs that fetched zero readings no longer silently return exit
+  code `0`.
+- Network-dependent unit tests now mock `socket.getaddrinfo` so the suite is
+  hermetic and passes without internet access.
+
 ## [1.2.1] - 2026-08-11
 
 ### Fixed

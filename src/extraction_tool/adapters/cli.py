@@ -10,7 +10,12 @@ import sys
 from pathlib import Path
 
 from extraction_tool.contracts.extraction import ExtractionRequest, ExtractionResult
-from extraction_tool.contracts.readings import ReadingRequest
+from extraction_tool.contracts.readings import (
+    ReadingOccurrence,
+    ReadingPlan,
+    ReadingRequest,
+    ReadingResult,
+)
 from extraction_tool.extraction.ocr import check_dependencies
 from extraction_tool.repositories.filesystem import FilesystemRepository
 from extraction_tool.repositories.http import HttpReadingRepository
@@ -185,7 +190,13 @@ def preprocess_pdf_main() -> None:
 def _build_fetch_readings_parser() -> argparse.ArgumentParser:
     """Return the ArgumentParser for fetch_readings."""
     ap = argparse.ArgumentParser(
-        description="Extract reading URLs from a syllabus PDF and fetch them as text.")
+        description=(
+            "Extract reading URLs from a syllabus PDF and fetch them as text. "
+            "Exit codes: 0 = all non-video readings acquired or already present; "
+            "2 = partial (manual captures or recoverable failures); "
+            "1 = fatal, no URLs discovered, or all attempted retrievals failed."
+        )
+    )
     ap.add_argument("pdf", nargs="?", help="syllabus / reading-list PDF")
     ap.add_argument("--urls", help="text file of URLs, one per line")
     ap.add_argument("--out-dir", default="readings")
@@ -203,10 +214,119 @@ def _build_fetch_readings_parser() -> argparse.ArgumentParser:
     ap.add_argument("--browser-timeout", type=int, default=30,
                     help="headless browser render timeout in seconds")
     ap.add_argument("--dry-run", action="store_true",
-                   help="categorise URLs and report what would be fetched")
+                    help="categorise URLs and report what would be fetched")
+    ap.add_argument("--gated-host", action="append", default=[],
+                    help="additional host substring treated as gated "
+                         "(can be given multiple times)")
     ap.add_argument("--version", action="version",
                     version=f"%(prog)s {_version()}")
     return ap
+
+
+def _reading_request_from_args(args: argparse.Namespace) -> ReadingRequest:
+    """Build a ReadingRequest from parsed CLI arguments."""
+    return ReadingRequest(
+        source=args.pdf,
+        urls_file=args.urls,
+        out_dir=args.out_dir,
+        include_videos=args.include_videos,
+        delay=args.delay,
+        timeout=args.timeout,
+        overwrite=args.overwrite,
+        min_words=args.min_words,
+        use_browser=args.use_browser,
+        browser_timeout=args.browser_timeout,
+        gated_hosts=list(args.gated_host),
+    )
+
+
+def _print_list_only(plan: ReadingPlan) -> int:
+    """Print the categorised URL list and return an exit code."""
+    if plan.total_occurrences == 0:
+        print("No reading URLs were discovered.", file=sys.stderr)
+        return 1
+
+    print("\nCATEGORISED READING URLs")
+    print("=" * 72)
+    for category in ("article", "pdf", "gated", "video"):
+        entries = [e for e in plan.entries if e.category == category]
+        if not entries:
+            continue
+        print(f"\n{category.upper()} ({len(entries)} unique)")
+        for entry in entries:
+            pages = _pages_str(entry.occurrences)
+            print(f"  {entry.url}")
+            print(f"      pages: {pages}")
+    print("\n" + "=" * 72)
+    print(f"Total: {plan.total_unique} unique URLs across "
+          f"{plan.total_occurrences} occurrences")
+    print(f"  articles: {plan.category_counts['article']}, "
+          f"PDFs: {plan.category_counts['pdf']}, "
+          f"gated: {plan.category_counts['gated']}, "
+          f"videos: {plan.category_counts['video']}")
+    return 0
+
+
+def _print_dry_run(plan: ReadingPlan, out_dir: str) -> None:
+    """Print what a normal run would do without making network calls."""
+    print("\nDRY RUN - no network requests or files written", file=sys.stderr)
+    print(f"\nDiscovered: {plan.total_unique} unique URLs across "
+          f"{plan.total_occurrences} occurrences", file=sys.stderr)
+    print(f"PDFs:      {plan.category_counts['pdf']}", file=sys.stderr)
+    print(f"Articles:  {plan.category_counts['article']}", file=sys.stderr)
+    print(f"Gated:     {plan.category_counts['gated']}", file=sys.stderr)
+    print(f"Videos:    {plan.category_counts['video']}", file=sys.stderr)
+    print(f"\nOutput directory would be: {out_dir}", file=sys.stderr)
+
+    for category in ("pdf", "gated", "article", "video"):
+        for entry in plan.entries:
+            if entry.category != category:
+                continue
+            pages = _pages_str(entry.occurrences)
+            label = {
+                "pdf": "PDF",
+                "gated": "GATED",
+                "article": "ARTICLE",
+                "video": "VIDEO",
+            }[category]
+            print(f"\n{label} — syllabus page {pages}", file=sys.stderr)
+            print(f"{entry.url}", file=sys.stderr)
+
+
+def _pages_str(occurrences: list[ReadingOccurrence]) -> str:
+    """Return a comma-separated page string, or 'unknown'."""
+    pages = sorted(
+        {o.source_page for o in occurrences if o.source_page is not None}
+    )
+    return ", ".join(str(p) for p in pages) if pages else "unknown"
+
+
+def _print_summary(result: ReadingResult, out_dir: str) -> None:
+    """Print a concise acquisition summary to stderr."""
+    print("\nACQUISITION SUMMARY", file=sys.stderr)
+    print(f"  unique URLs discovered:  {result.discovered}", file=sys.stderr)
+    print(f"  readings fetched:        {result.fetched_count}", file=sys.stderr)
+    print(f"  PDFs downloaded:         {result.downloaded_pdfs_count}",
+          file=sys.stderr)
+    print(f"  existing files skipped:  {result.skipped_count}", file=sys.stderr)
+    print(f"  manual captures:         {result.manual_count}", file=sys.stderr)
+    print(f"  videos skipped:          {result.videos_count}", file=sys.stderr)
+    print(f"  unexpected errors:       {result.unexpected_errors}",
+          file=sys.stderr)
+    if result.manual_count:
+        print(f"\n  MANUAL_CAPTURE.txt:      {Path(out_dir) / 'MANUAL_CAPTURE.txt'}",
+              file=sys.stderr)
+    if result.fetched_count == 0 and result.downloaded_pdfs_count == 0:
+        print("\n  [warning] No readings were acquired.", file=sys.stderr)
+
+
+def _exit_code_for_result(result: ReadingResult) -> int:
+    """Return the documented exit code for a finished acquisition run."""
+    if not result.success:
+        return 1
+    if result.manual_count or result.unexpected_errors:
+        return 2
+    return 0
 
 
 def fetch_readings_main() -> None:
@@ -218,27 +338,19 @@ def fetch_readings_main() -> None:
         ap.error("give a syllabus PDF, or --urls FILE (or both)")
 
     repo = HttpReadingRepository()
-    service = ReadingService(repo)
+    fs_repo = FilesystemRepository()
+    service = ReadingService(repo, fs_repo)
+    request = _reading_request_from_args(args)
+
+    if args.list_only:
+        plan = service.plan_readings(request)
+        sys.exit(_print_list_only(plan))
 
     if args.dry_run:
-        print("\n=== DRY RUN - no network requests, no files written ===",
-              file=sys.stderr)
-        print(f"Output directory would be: {args.out_dir}", file=sys.stderr)
+        plan = service.plan_readings(request)
+        _print_dry_run(plan, args.out_dir)
         return
 
-    request = ReadingRequest(
-        source=args.pdf,
-        urls_file=args.urls,
-        out_dir=args.out_dir,
-        include_videos=args.include_videos,
-        delay=args.delay,
-        timeout=args.timeout,
-        overwrite=args.overwrite,
-        min_words=args.min_words,
-        use_browser=args.use_browser,
-        browser_timeout=args.browser_timeout,
-    )
     result = service.acquire_readings(request)
-    if not result.success:
-        print(f"Error: {result.errors}", file=sys.stderr)
-        sys.exit(1)
+    _print_summary(result, args.out_dir)
+    sys.exit(_exit_code_for_result(result))
