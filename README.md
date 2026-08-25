@@ -102,6 +102,32 @@ python fetch_readings.py --urls urls.txt --out-dir readings --dry-run
 
 ---
 
+## Fetch readings from the web
+
+If your syllabus or reading list links out to articles instead of PDFs:
+
+```
+# Extract links from a syllabus PDF and fetch what is openly available
+python fetch_readings.py syllabus.pdf --out-dir readings
+
+# Or give it a plain text file with one URL per line
+python fetch_readings.py --urls urls.txt --out-dir readings
+```
+
+It writes each fetched article as a `.txt` file, downloads any direct PDFs it
+finds, and creates `readings/MANUAL_CAPTURE.txt` listing anything it could not
+fetch — paywalled pages, login-gated articles, or bot-protected content. It does
+not bypass paywalls; save those through your browser and then point
+`preprocess_pdf.py` at the saved PDFs.
+
+Preview what it would fetch without making network requests or writing files:
+
+```
+python fetch_readings.py --urls urls.txt --out-dir readings --dry-run
+```
+
+---
+
 ## Important: what you can and cannot share
 
 **Share the tools freely.** Scripts and docs, no restrictions.
@@ -176,15 +202,10 @@ code.
 
 ## REST API
 
-The same extraction and reading-acquisition logic is also exposed through a
-FastAPI adapter:
-
-```
-python -m extraction_tool.adapters.fastapi
-```
-
-By default it starts on `http://localhost:8000`. See the module docstring for
-endpoint details and rate-limit defaults.
+The same extraction and reading-acquisition logic is also available as a
+FastAPI router in `src/extraction_tool/adapters/fastapi.py` for integrating
+into a larger FastAPI application. It is not a standalone server yet; see the
+module docstring for router usage and rate-limit defaults.
 
 ## Version
 
