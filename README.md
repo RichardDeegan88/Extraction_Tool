@@ -176,15 +176,10 @@ code.
 
 ## REST API
 
-The same extraction and reading-acquisition logic is also exposed through a
-FastAPI adapter:
-
-```
-python -m extraction_tool.adapters.fastapi
-```
-
-By default it starts on `http://localhost:8000`. See the module docstring for
-endpoint details and rate-limit defaults.
+The same extraction and reading-acquisition logic is also available as a
+FastAPI router in `src/extraction_tool/adapters/fastapi.py` for integrating
+into a larger FastAPI application. It is not a standalone server yet; see the
+module docstring for router usage and rate-limit defaults.
 
 ## Version
 
