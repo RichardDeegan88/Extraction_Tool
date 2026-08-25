@@ -6,6 +6,7 @@ import re
 import socket
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -32,6 +33,8 @@ class HttpReadingRepository:
         "proquest.com",
         "muse.jhu.edu",
         "academic.oup.com",
+        "primo.exlibrisgroup.com",
+        "aul.primo.exlibrisgroup.com",
     )
     MAX_ARTICLE_SIZE = 10 * 1024 * 1024
     MAX_PDF_SIZE = 100 * 1024 * 1024
@@ -223,17 +226,44 @@ class HttpReadingRepository:
         finally:
             driver.quit()
 
-    def categorise(self, url: str) -> str:
+    def categorise(
+        self, url: str, extra_gated: Sequence[str] = ()
+    ) -> str:
         """Return one of: 'video', 'pdf', 'gated', 'article'."""
         host = urlparse(url).netloc.lower()
         path = urlparse(url).path.lower()
         if any(host == v or host.endswith("." + v) for v in self._VIDEO_HOSTS):
             return "video"
-        if any(g in host for g in self._GATED_MARKERS):
+        gated_markers = tuple(self._GATED_MARKERS) + tuple(extra_gated)
+        if any(g in host for g in gated_markers):
             return "gated"
         if path.endswith(".pdf"):
             return "pdf"
         return "article"
+
+    @staticmethod
+    def classify_failure(error: str, size_reason: str | None = None) -> str:
+        """Map a fetch error string to a typed failure class."""
+        low = error.lower()
+        if size_reason == "size_limit" or "limit" in low:
+            return "size_limit"
+        if "could not resolve host" in low or "dns" in low:
+            return "dns_failure"
+        if "connection failed" in low or "refused" in low or "timeout" in low:
+            return "network_failure"
+        if low.startswith("http "):
+            return "http_failure"
+        if "login" in low or "subscribe" in low or "institutional" in low:
+            return "institutional_login"
+        if "browser" in low:
+            return "browser_failure"
+        if "only" in low and "words" in low:
+            return "insufficient_content"
+        if "pdf" in low or "content type" in low:
+            return "incorrect_content_type"
+        if "human" in low or "bot" in low or "checking your browser" in low:
+            return "bot_protection"
+        return "unknown_failure"
 
     def safe_filename(self, url: str, max_len: int = 80) -> str:
         """Build a readable, filesystem-safe filename from a URL."""

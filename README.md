@@ -126,6 +126,39 @@ Preview what it would fetch without making network requests or writing files:
 python fetch_readings.py --urls urls.txt --out-dir readings --dry-run
 ```
 
+List the discovered URLs grouped by category without fetching anything:
+
+```
+python fetch_readings.py syllabus.pdf --list-only
+python fetch_readings.py --urls urls.txt --list-only
+```
+
+If the same URL appears on multiple syllabus pages, it is fetched once but
+reported with every page where it appears.
+
+### Exit codes
+
+`fetch_readings.py` now reports honest exit codes:
+
+- `0` — all non-video readings were successfully fetched or already present.
+- `2` — partial completion; some readings need manual capture or hit
+  recoverable failures. Check `MANUAL_CAPTURE.txt`.
+- `1` — fatal failure, invalid input, no URLs discovered, or every attempted
+  retrieval failed unexpectedly.
+
+A run that acquires no readings will never silently return `0`.
+
+### Configuring gated sources
+
+Known institutional resolver hosts (such as `aul.primo.exlibrisgroup.com`)
+are treated as gated by default. You can add your own host substrings with
+`--gated-host` (repeatable):
+
+```
+python fetch_readings.py syllabus.pdf --out-dir readings \
+  --gated-host myproxy.example.edu --gated-host catalog.example.edu
+```
+
 ---
 
 ## Use with an AI assistant

@@ -178,9 +178,15 @@ class TestBoundedDownloads:
         )
         return resp
 
+    def _public_addr(self):
+        return [(socket.AF_INET, None, None, None, ("93.184.216.34", 0))]
+
     def test_content_length_over_limit_aborts(self):
         resp = self._mock_response(b"x", content_length=50)
-        with patch.object(fetch_readings._OPENER, "open", return_value=resp):
+        with (
+            patch("socket.getaddrinfo", return_value=self._public_addr()),
+            patch.object(fetch_readings._OPENER, "open", return_value=resp),
+        ):
             resp.__enter__ = MagicMock(return_value=resp)
             resp.__exit__ = MagicMock(return_value=False)
             body, ctype, err, reason = fetch_readings.fetch_url(
@@ -193,17 +199,24 @@ class TestBoundedDownloads:
         resp = self._mock_response(b"x" * 100, content_length=None)
         resp.__enter__ = MagicMock(return_value=resp)
         resp.__exit__ = MagicMock(return_value=False)
-        with patch.object(fetch_readings._OPENER, "open", return_value=resp):
+        with (
+            patch("socket.getaddrinfo", return_value=self._public_addr()),
+            patch.object(fetch_readings._OPENER, "open", return_value=resp),
+        ):
             body, ctype, err, reason = fetch_readings.fetch_url(
                 "http://example.com/huge", 5, max_size=32)
             assert body is None
             assert reason == "size_limit"
+            assert "32" in err
 
     def test_small_body_fits(self):
         resp = self._mock_response(b"hello world", content_length=11)
         resp.__enter__ = MagicMock(return_value=resp)
         resp.__exit__ = MagicMock(return_value=False)
-        with patch.object(fetch_readings._OPENER, "open", return_value=resp):
+        with (
+            patch("socket.getaddrinfo", return_value=self._public_addr()),
+            patch.object(fetch_readings._OPENER, "open", return_value=resp),
+        ):
             body, ctype, err, reason = fetch_readings.fetch_url(
                 "http://example.com/small", 5, max_size=100)
             assert body == b"hello world"
