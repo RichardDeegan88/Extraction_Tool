@@ -297,7 +297,7 @@ class ReadingService:
             return str(raw)
 
     @staticmethod
-    def _extract_article(raw: bytes, content_type: str = "") -> tuple[str, str, str]:
+    def _extract_article(raw: bytes) -> tuple[str, str, str]:
         """Return (text, title, extractor_name)."""
         import html as html_mod
         raw_html = raw.decode("utf-8", errors="replace")
@@ -473,7 +473,7 @@ def _extract_article_text(raw: bytes) -> tuple[str, str]:
 
 def _fetch_article_source(
     repo: HttpReadingRepository,
-    extract_article: Callable[[bytes, str], tuple[str, str, str]],
+    extract_article: Callable[[bytes], tuple[str, str, str]],
     request: ReadingRequest,
     url: str,
     pdf_dir: Path,
@@ -490,7 +490,7 @@ def _fetch_article_source(
         if not html:
             manual.append((url, err or "browser returned no content"))
             return None
-        text, title, extractor = extract_article(html.encode("utf-8"), "")
+        text, title, extractor = extract_article(html.encode("utf-8"))
         return text, title, extractor, html
 
     body, ctype, err, _ = repo.fetch_url(
@@ -506,5 +506,5 @@ def _fetch_article_source(
         Path(pdf_target).write_bytes(body)
         fetched.append(str(pdf_target))
         return None
-    text, title, extractor = extract_article(body, ctype)
+    text, title, extractor = extract_article(body)
     return text, title, extractor, body.decode("utf-8", errors="replace")

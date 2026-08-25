@@ -59,7 +59,9 @@ class ExtractionRouter:
     def _setup_routes(self) -> None:
         @self._router.post("/extract", response_model=ExtractionResult)
         @self._limit("10/minute")  # type: ignore[untyped-decorator]
-        def extract_pdf(request: Request, info: ExtractionRequest) -> ExtractionResult:
+        def extract_pdf(
+            request: Request, info: ExtractionRequest  # noqa: ARG001
+        ) -> ExtractionResult:
             try:
                 return self._extraction_service.extract_pdf(info)
             except Exception as e:
@@ -67,7 +69,9 @@ class ExtractionRouter:
 
         @self._router.post("/readings", response_model=ReadingResult)
         @self._limit("10/minute")  # type: ignore[untyped-decorator]
-        def acquire_readings(request: Request, info: ReadingRequest) -> ReadingResult:
+        def acquire_readings(
+            request: Request, info: ReadingRequest  # noqa: ARG001
+        ) -> ReadingResult:
             try:
                 return self._reading_service.acquire_readings(info)
             except Exception as e:
