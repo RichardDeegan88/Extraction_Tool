@@ -93,7 +93,7 @@ def test_reports_error_on_render_failure(
         def set_page_load_timeout(self, timeout: int) -> None:
             pass
 
-        def get(self, url: str) -> None:
+        def get(self, _url: str) -> None:
             raise RuntimeError("tab crashed")
 
         @property

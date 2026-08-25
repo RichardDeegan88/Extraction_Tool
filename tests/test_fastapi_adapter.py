@@ -29,7 +29,7 @@ class StubExtractionService:
     def __init__(self) -> None:
         self.calls = 0
 
-    def extract_pdf(self, request: ExtractionRequest) -> ExtractionResult:
+    def extract_pdf(self, _request: ExtractionRequest) -> ExtractionResult:
         self.calls += 1
         return ExtractionResult(
             success=True,
@@ -53,7 +53,7 @@ class StubReadingService:
     def __init__(self) -> None:
         self.calls = 0
 
-    def acquire_readings(self, request: ReadingRequest) -> ReadingResult:
+    def acquire_readings(self, _request: ReadingRequest) -> ReadingResult:
         self.calls += 1
         return ReadingResult(
             success=True,

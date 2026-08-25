@@ -303,26 +303,26 @@ class TestReadingService:
     def service(self):
         return ReadingService(HttpReadingRepository())
 
-    def test_page_looks_gated_detects_login_form(self, service):
+    def test_page_looks_gated_detects_login_form(self, service):  # noqa: ARG002
         html = "<html><body><form><input name='login'></form>short text</body></html>"
         reason = ReadingService._page_looks_gated(html, "short text", 10)
         assert "login form" in reason
 
-    def test_page_looks_gated_clean_page(self, service):
+    def test_page_looks_gated_clean_page(self, service):  # noqa: ARG002
         reason = ReadingService._page_looks_gated(
             "<html></html>", "normal article text here", 200
         )
         assert reason == ""
 
-    def test_trim_url_strips_trailing_punct(self, service):
+    def test_trim_url_strips_trailing_punct(self, service):  # noqa: ARG002
         assert ReadingService._trim_url("http://example.com/page.") == "http://example.com/page"
         assert ReadingService._trim_url("http://example.com/page,") == "http://example.com/page"
 
-    def test_decode_body_utf8(self, service):
+    def test_decode_body_utf8(self, service):  # noqa: ARG002
         raw = b"Hello World"
         assert ReadingService._decode_body(raw) == "Hello World"
 
-    def test_decode_body_fallback_on_bad_charset(self, service):
+    def test_decode_body_fallback_on_bad_charset(self, service):  # noqa: ARG002
         raw = b"Hello World"
         result = ReadingService._decode_body(
             raw, content_type="text/html; charset=invalid"
