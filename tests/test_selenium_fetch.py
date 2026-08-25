@@ -71,8 +71,19 @@ def test_ssrf_refuses_non_http_scheme():
     assert "refused non-http" in err
 
 
+@pytest.fixture
+def public_host(monkeypatch: pytest.MonkeyPatch):
+    """Patch SSRF resolution so public URLs do not need real DNS."""
+    monkeypatch.setattr(
+        HttpReadingRepository,
+        "_is_public_host",
+        staticmethod(lambda host: (True, "")),
+    )
+
+
 def test_renders_public_url_and_returns_html(
     monkeypatch: pytest.MonkeyPatch,
+    public_host: None,
 ) -> None:
     _install_fake_selenium(monkeypatch)
     repo = HttpReadingRepository()
@@ -83,6 +94,7 @@ def test_renders_public_url_and_returns_html(
 
 def test_reports_error_on_render_failure(
     monkeypatch: pytest.MonkeyPatch,
+    public_host: None,
 ) -> None:
     _install_fake_selenium(monkeypatch)
 

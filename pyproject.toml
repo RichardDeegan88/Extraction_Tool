@@ -63,7 +63,8 @@ dev = [
 ]
 
 [project.scripts]
-extraction-tool = "extraction_tool.cli:main"
+preprocess-pdf = "extraction_tool.adapters.cli:preprocess_pdf_main"
+fetch-readings = "extraction_tool.adapters.cli:fetch_readings_main"
 
 [project.urls]
 Repository = "https://github.com/RichardDeegan88/Extraction_Tool"

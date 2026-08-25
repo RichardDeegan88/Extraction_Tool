@@ -39,6 +39,10 @@ _LOGIN_FORM_RE = re.compile(
 )
 _LOGIN_FORM_MARKERS = ("login", "log in", "signin", "sign in", "auth",
                        "password", "passwort", "contraseña")
+_TECHNICAL_FAILURE_CLASSES = frozenset({
+    "dns_failure", "network_failure", "http_failure", "size_limit",
+    "browser_failure",
+})
 
 
 @dataclass
@@ -185,6 +189,27 @@ def classify_gate_reason(reason: str) -> str:
     if "only" in low and "words" in low:
         return "insufficient_content"
     return "bot_protection"
+
+
+def _unique_page_url_entries(
+    entries: list[tuple[int | None, str]]
+) -> list[tuple[int | None, str]]:
+    """Remove duplicate (page, url) pairs from PDF sources while preserving order.
+
+    The same URL may appear as both a link annotation and visible text on one
+    PDF page; that should count as a single occurrence. Appearances on different
+    pages are preserved. Plain URL files (page is None) are left as-is.
+    """
+    seen: set[tuple[int, str]] = set()
+    unique: list[tuple[int | None, str]] = []
+    for page, url in entries:
+        if page is not None:
+            key = (page, url.rstrip("/"))
+            if key in seen:
+                continue
+            seen.add(key)
+        unique.append((page, url))
+    return unique
 
 
 class ReadingService:
@@ -456,7 +481,7 @@ class ReadingService:
                 if not line.lower().startswith(("http://", "https://")):
                     continue
                 entries.append((None, line))
-        return entries
+        return _unique_page_url_entries(entries)
 
     def _build_plan(
         self,
@@ -583,27 +608,45 @@ def _write_manual_capture(
     out_dir: Path,
     manual: list[ManualCaptureEntry],
 ) -> None:
-    """Write the MANUAL_CAPTURE.txt report for unfetchable readings."""
+    """Write the MANUAL_CAPTURE.txt report, separating retryable failures."""
     manual_path = out_dir / "MANUAL_CAPTURE.txt"
+    capture = [e for e in manual
+               if e.failure_class not in _TECHNICAL_FAILURE_CLASSES]
+    technical = [e for e in manual
+                 if e.failure_class in _TECHNICAL_FAILURE_CLASSES]
+
     lines = [
         "=" * 72,
         "READINGS THAT COULD NOT BE FETCHED AUTOMATICALLY",
         "=" * 72,
         "",
-        "These need to be saved by hand. Open each in a browser where you",
-        "are signed in (institutional proxy, subscription, etc.), then use",
-        "Ctrl+P -> 'Save as PDF' and put the file with your other PDFs so",
-        "preprocess_pdf.py can process it.",
-        "",
-        "Nothing was written for these URLs. A login or error page was NOT",
-        "saved as if it were the reading.",
-        "",
     ]
-    if manual:
-        for entry in manual:
+    if capture:
+        lines += [
+            "MANUAL CAPTURE REQUIRED",
+            "",
+            "These need to be saved by hand. Open each in a browser where you",
+            "are signed in (institutional proxy, subscription, etc.), then use",
+            "Ctrl+P -> 'Save as PDF' and put the file with your other PDFs so",
+            "preprocess_pdf.py can process it.",
+            "",
+        ]
+        for entry in capture:
             lines.extend(_format_manual_entry(entry))
             lines.append("")
-    else:
+    if technical:
+        lines += [
+            "TECHNICAL FAILURES — RETRY",
+            "",
+            "These URLs could not be reached because of a network, DNS, HTTP,",
+            "size-limit, or browser-rendering problem. They are not paywalled;",
+            "check connectivity and rerun before treating them as manual captures.",
+            "",
+        ]
+        for entry in technical:
+            lines.extend(_format_manual_entry(entry))
+            lines.append("")
+    if not manual:
         lines.append("  (none - everything fetched successfully)")
         lines.append("")
     fs_repo.atomic_write_text(manual_path, "\n".join(lines) + "\n")
@@ -687,6 +730,50 @@ def _extract_article_text(raw: bytes) -> tuple[str, str]:
     return html_to_text_builtin(raw_html), "built-in stripper"
 
 
+def _record_manual_capture(
+    state: _AcquireState,
+    url: str,
+    failure_class: str,
+    reason: str,
+    pages: list[int],
+    label: str | None,
+) -> None:
+    """Record a manual-capture entry and increment the counter."""
+    state.manual.append(
+        ManualCaptureEntry(
+            url=url,
+            category="article",
+            failure_class=failure_class,
+            reason=reason,
+            pages=pages,
+            label=label,
+        )
+    )
+    state.manual_count += 1
+
+
+def _save_article_pdf_or_skip(
+    body: bytes,
+    repo: HttpReadingRepository,
+    fs_repo: FilesystemRepository,
+    request: ReadingRequest,
+    url: str,
+    pdf_dir: Path,
+    state: _AcquireState,
+) -> None:
+    """Save an article URL that returned a PDF, or skip if it exists."""
+    pdf_dir.mkdir(exist_ok=True)
+    pdf_target = pdf_dir / (repo.safe_filename(url) + ".pdf")
+    if not pdf_target.exists() or request.overwrite:
+        fs_repo.atomic_write_bytes(pdf_target, body)
+        state.fetched.append(str(pdf_target))
+        state.downloaded_pdfs.append(str(pdf_target))
+        state.downloaded_pdfs_count += 1
+    else:
+        state.skipped.append(str(pdf_target))
+        state.skipped_count += 1
+
+
 def _fetch_article_source(
     repo: HttpReadingRepository,
     extract_article: Callable[[bytes], tuple[str, str, str]],
@@ -703,54 +790,59 @@ def _fetch_article_source(
     """
     pages = pages_from_occurrences(occurrences)
     label = first_label(occurrences)
-
     if request.use_browser:
-        html, err = repo.fetch_rendered_html(url, request.browser_timeout)
-        time.sleep(request.delay)
-        if not html:
-            state.manual.append(
-                ManualCaptureEntry(
-                    url=url,
-                    category="article",
-                    failure_class=repo.classify_failure(err or ""),
-                    reason=err or "browser returned no content",
-                    pages=pages,
-                    label=label,
-                )
-            )
-            state.manual_count += 1
-            return None
-        text, title, extractor = extract_article(html.encode("utf-8"))
-        return text, title, extractor, html
+        return _fetch_article_via_browser(
+            repo, extract_article, request, url, pages, label, state)
+    return _fetch_article_via_http(
+        repo, extract_article, fs_repo, request, url, pdf_dir, pages, label, state)
 
-    body, ctype, err, size_reason = repo.fetch_url(
+
+def _fetch_article_via_browser(
+    repo: HttpReadingRepository,
+    extract_article: Callable[[bytes], tuple[str, str, str]],
+    request: ReadingRequest,
+    url: str,
+    pages: list[int],
+    label: str | None,
+    state: _AcquireState,
+) -> tuple[str, str, str, str] | None:
+    """Render an article in a headless browser and return extracted source."""
+    html, err = repo.fetch_rendered_html(url, request.browser_timeout)
+    time.sleep(request.delay)
+    if not html:
+        _record_manual_capture(
+            state, url, repo.classify_failure(err or ""),
+            err or "browser returned no content", pages, label,
+        )
+        return None
+    text, title, extractor = extract_article(html.encode("utf-8"))
+    return text, title, extractor, html
+
+
+def _fetch_article_via_http(
+    repo: HttpReadingRepository,
+    extract_article: Callable[[bytes], tuple[str, str, str]],
+    fs_repo: FilesystemRepository,
+    request: ReadingRequest,
+    url: str,
+    pdf_dir: Path,
+    pages: list[int],
+    label: str | None,
+    state: _AcquireState,
+) -> tuple[str, str, str, str] | None:
+    """Fetch an article over HTTP and return extracted source."""
+    body, _ctype, err, size_reason = repo.fetch_url(
         url, request.timeout, max_size=10 * 1024 * 1024
     )
     time.sleep(request.delay)
     if body is None:
-        state.manual.append(
-            ManualCaptureEntry(
-                url=url,
-                category="article",
-                failure_class=repo.classify_failure(err, size_reason),
-                reason=err or "fetch failed",
-                pages=pages,
-                label=label,
-            )
+        _record_manual_capture(
+            state, url, repo.classify_failure(err, size_reason),
+            err or "fetch failed", pages, label,
         )
-        state.manual_count += 1
         return None
     if body.startswith(b"%PDF"):
-        pdf_dir.mkdir(exist_ok=True)
-        pdf_target = pdf_dir / (repo.safe_filename(url) + ".pdf")
-        if not pdf_target.exists() or request.overwrite:
-            fs_repo.atomic_write_bytes(pdf_target, body)
-            state.fetched.append(str(pdf_target))
-            state.downloaded_pdfs.append(str(pdf_target))
-            state.downloaded_pdfs_count += 1
-        else:
-            state.skipped.append(str(pdf_target))
-            state.skipped_count += 1
+        _save_article_pdf_or_skip(body, repo, fs_repo, request, url, pdf_dir, state)
         return None
     text, title, extractor = extract_article(body)
     return text, title, extractor, body.decode("utf-8", errors="replace")

@@ -100,6 +100,9 @@ python fetch_readings.py syllabus.pdf --out-dir readings --dry-run
 python fetch_readings.py --urls urls.txt --out-dir readings --dry-run
 ```
 
+If you installed the package (`pip install .` or `uv pip install .`), the same
+commands are available as `preprocess-pdf` and `fetch-readings`.
+
 ---
 
 ## Fetch readings from the web
