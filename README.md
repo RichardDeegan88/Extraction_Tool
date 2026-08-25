@@ -128,6 +128,34 @@ python fetch_readings.py --urls urls.txt --out-dir readings --dry-run
 
 ---
 
+## Use with an AI assistant
+
+This toolkit is designed so an AI assistant can run it for you. A typical
+workflow:
+
+1. **Point the AI at this repo.** Give it the URL
+   `https://github.com/RichardDeegan88/Extraction_Tool` and ask it to set the
+   tool up on your machine.
+
+2. **Upload your syllabus or reading list.** A PDF syllabus works best; a plain
+   text file with one URL per line also works.
+
+3. **Ask the AI to fetch the web readings.** For example:
+   "Run `fetch_readings.py` on my syllabus and tell me what it downloaded and
+   what needs manual capture."
+
+4. **Ask the AI to extract any PDFs.** For example:
+   "Run `preprocess_pdf.py` on the readings folder and verify the page counts."
+
+5. **Feed the extracted text back to the AI in pieces.** Use the
+   `--- PAGE N ---` markers to pull a chapter or page range, not the whole book.
+   Check `docs/QUALITY.md` before quoting from `[OCR]` pages.
+
+See `docs/USING-WITH-AI.md` for prompt advice, page-range strategies, and
+academic-integrity notes.
+
+---
+
 ## Important: what you can and cannot share
 
 **Share the tools freely.** Scripts and docs, no restrictions.
