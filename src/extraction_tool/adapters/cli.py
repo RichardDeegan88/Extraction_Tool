@@ -348,6 +348,9 @@ def fetch_readings_main() -> None:
 
     if args.dry_run:
         plan = service.plan_readings(request)
+        if plan.total_occurrences == 0:
+            print("No reading URLs were discovered.", file=sys.stderr)
+            sys.exit(1)
         _print_dry_run(plan, args.out_dir)
         return
 

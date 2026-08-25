@@ -22,6 +22,8 @@ All notable changes to this project are documented here. Format follows
 - Failure classes in `MANUAL_CAPTURE.txt` so expected access restrictions are
   separated from technical failures (e.g. `dns_failure`, `network_failure`,
   `http_failure`, `institutional_login`, `insufficient_content`).
+- Installed console commands `preprocess-pdf` and `fetch-readings`, replacing
+  the broken `extraction-tool` entry point.
 
 ### Changed
 - `--dry-run` now actually inspects the syllabus/URL file, categorises URLs,
@@ -32,13 +34,18 @@ All notable changes to this project are documented here. Format follows
 - Repeated URLs are fetched once but reported with every syllabus page where
   they appear.
 - `MANUAL_CAPTURE.txt` now includes category, failure class, exact reason, and
-  all source pages for each entry.
+  all source pages for each entry, split into "MANUAL CAPTURE REQUIRED" and
+  "TECHNICAL FAILURES — RETRY" sections.
 
 ### Fixed
 - Acquisition runs that fetched zero readings no longer silently return exit
   code `0`.
-- Network-dependent unit tests now mock `socket.getaddrinfo` so the suite is
-  hermetic and passes without internet access.
+- Empty `--dry-run` inputs now return exit code `1` with a clear message.
+- URLs represented as both a link annotation and visible text on the same page
+  are counted as one occurrence instead of two.
+- HTTP unit tests now mock `socket.getaddrinfo` and Selenium render tests mock
+  `_is_public_host` so the suite passes without internet access.
+- Reduced `_fetch_article_source` below the 50-line complexity target.
 
 ## [1.2.1] - 2026-08-11
 
