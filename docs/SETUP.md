@@ -9,13 +9,15 @@ tesseract onto PATH on Windows, covered below.
 
 ### 1. Python
 
+The toolkit requires **Python 3.12 or newer**.
+
 ```powershell
 python --version
 ```
 
-If that reports a version, you're done. If it opens the Microsoft Store or
-errors, install from https://python.org and **tick "Add Python to PATH"** during
-installation.
+If that reports 3.12 or higher, you're done. If it opens the Microsoft Store or
+errors, install Python 3.12+ from https://python.org and **tick "Add Python to
+PATH"** during installation.
 
 ### 2. The three tools
 
@@ -87,7 +89,8 @@ pip3 install -r requirements.txt
 python3 preprocess_pdf.py --check
 ```
 
-If you don't have Homebrew, get it from https://brew.sh first.
+If you don't have Homebrew, get it from https://brew.sh first. The toolkit
+requires Python 3.12 or newer.
 
 ---
 
@@ -95,6 +98,7 @@ If you don't have Homebrew, get it from https://brew.sh first.
 
 ```bash
 sudo apt install poppler-utils tesseract-ocr imagemagick
+# The toolkit requires Python 3.12 or newer.
 pip install -r requirements.txt
 python3 preprocess_pdf.py --check
 ```

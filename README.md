@@ -18,9 +18,9 @@ that happens:
 `preprocess_pdf.py` extracts the whole PDF on your own machine, verifies the
 page count against the PDF's own count, and hands you a plain `.txt` you can
 search, quote from, and feed to an assistant **in targeted pieces** instead of
-whole. `fetch_readings.py` pulls every reading link out of a syllabus and
-fetches what it can, routing paywalled ones to a manual-capture list rather
-than pretending it got them. Both tools are **honest about what they couldn't
+whole. `fetch_readings.py` pulls reading links out of a syllabus PDF or a plain
+`--urls` file and fetches what it can, routing paywalled ones to a
+manual-capture list rather than pretending it got them. Both tools are **honest about what they couldn't
 get** — OCR'd text is tagged, page-count gaps are flagged, paywalled readings
 are listed. The assistant's failure is silent; this isn't.
 
@@ -56,7 +56,7 @@ reaches the assistant and tells you when it didn't.
 | File | What it does |
 |---|---|
 | `preprocess_pdf.py` | PDF -> complete searchable text, with OCR for scanned pages |
-| `fetch_readings.py` | Syllabus PDF -> fetches the readings that are only links |
+| `fetch_readings.py` | Syllabus PDF / URL list -> fetches the readings that are only links |
 | `RUN-ME.bat` / `run-me.sh` | No-command-line launchers (Windows / macOS-Linux) |
 | `docs/QUICKSTART.md` | **Start here if you are not technical.** Click-by-click setup and run guide. |
 | `docs/SETUP.md` | Install, per operating system. More detail than QUICKSTART. |
@@ -96,6 +96,8 @@ To preview what a run would do without writing any files:
 ```
 python preprocess_pdf.py "path/to/books" --out-dir extracted --dry-run
 python fetch_readings.py syllabus.pdf --out-dir readings --dry-run
+# or, if you already have a list of URLs:
+python fetch_readings.py --urls urls.txt --out-dir readings --dry-run
 ```
 
 ---
@@ -146,7 +148,7 @@ See `docs/QUICKSTART.md` for a recommended folder layout and storage setup.
 
 ## Requirements
 
-- Python 3.9 or newer
+- Python 3.12 or newer
 - poppler-utils (`pdftotext`, `pdftoppm`, `pdfinfo`)
 - tesseract-ocr (for scanned pages)
 - ImageMagick (optional, straightens crooked scans)
@@ -171,6 +173,18 @@ fetching logic now lives in the `src/extraction_tool` package (Data Access
 Factory layout). Contributors should read `ARCHITECTURE.md` for the layer model,
 security invariants, and the Power-of-Ten complexity gates before changing that
 code.
+
+## REST API
+
+The same extraction and reading-acquisition logic is also exposed through a
+FastAPI adapter:
+
+```
+python -m extraction_tool.adapters.fastapi
+```
+
+By default it starts on `http://localhost:8000`. See the module docstring for
+endpoint details and rate-limit defaults.
 
 ## Version
 
