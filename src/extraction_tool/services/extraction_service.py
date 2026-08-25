@@ -119,6 +119,15 @@ class ExtractionService:
         if out_path:
             self._persist_outputs(out_path, output_text, pdf_path, sanitized, header)
 
+        return self._build_success_result(output_text, report, method)
+
+    def _build_success_result(
+        self,
+        output_text: str,
+        report: QualityReport,
+        method: str,
+    ) -> ExtractionResult:
+        """Return a successful ExtractionResult from the quality report."""
         return ExtractionResult(
             success=True,
             text=output_text,
