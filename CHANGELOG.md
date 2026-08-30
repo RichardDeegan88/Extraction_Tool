@@ -29,8 +29,9 @@ All notable changes to this project are documented here. Format follows
 - `--dry-run` now actually inspects the syllabus/URL file, categorises URLs,
   and reports what would be fetched. It performs no network or filesystem I/O.
 - `--list-only` is no longer ignored; it is handled by the shared planner.
-- `fetch_readings.py` now always prints an acquisition summary and uses
-  documented exit codes (`0` success, `2` partial, `1` fatal/no URLs).
+- `fetch_readings.py` now always prints an acquisition summary. Exit codes
+  remain `0` for success and `1` for fatal failure (matching pre-refactor
+  behavior).
 - Repeated URLs are fetched once but reported with every syllabus page where
   they appear.
 - `MANUAL_CAPTURE.txt` now includes category, failure class, exact reason, and
@@ -38,9 +39,11 @@ All notable changes to this project are documented here. Format follows
   "TECHNICAL FAILURES — RETRY" sections.
 
 ### Fixed
-- Acquisition runs that fetched zero readings no longer silently return exit
-  code `0`.
 - Empty `--dry-run` inputs now return exit code `1` with a clear message.
+- Empty `--gated-host` values are rejected; previously an empty substring
+  matched every host and incorrectly routed all URLs to manual capture.
+- `MANUAL_CAPTURE.txt` again lists skipped video links when `--include-videos`
+  is not used, preserving the pre-refactor output format.
 - URLs represented as both a link annotation and visible text on the same page
   are counted as one occurrence instead of two.
 - HTTP unit tests now mock `socket.getaddrinfo` and Selenium render tests mock

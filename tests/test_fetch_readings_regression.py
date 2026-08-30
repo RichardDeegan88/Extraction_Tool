@@ -188,7 +188,7 @@ class TestAcquisitionReporting:
         assert result.success is False
         assert "No reading URLs were discovered" in result.errors[0]
 
-    def test_partial_acquisition_produces_exit_code_2(self, tmp_path: Path):
+    def test_partial_acquisition_returns_exit_code_0(self, tmp_path: Path):
         urls_path = _urls_file(tmp_path, [
             "https://example.com/article",
             "https://www.jstor.org/stable/123",
@@ -207,7 +207,7 @@ class TestAcquisitionReporting:
             pytest.raises(SystemExit) as exc_info,
         ):
             fetch_readings.fetch_readings_main()
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 0
 
     def test_manual_capture_contains_pages_and_class(self, tmp_path: Path):
         pdf = _url_pdf(tmp_path, [
@@ -247,6 +247,17 @@ class TestAcquisitionReporting:
         assert result.manual_count == 0
         assert result.unexpected_errors == 0
 
+    def test_manual_capture_lists_skipped_videos(self, tmp_path: Path):
+        urls_path = _urls_file(tmp_path, ["https://youtube.com/watch?v=1"])
+        request = fetch_readings.ReadingRequest(
+            urls_file=str(urls_path), out_dir=str(tmp_path / "readings"), delay=0
+        )
+        fetch_readings.acquire_readings(request)
+        manual_path = Path(request.out_dir) / "MANUAL_CAPTURE.txt"
+        content = manual_path.read_text(encoding="utf-8")
+        assert "VIDEOS (watch directly; not text)" in content
+        assert "https://youtube.com/watch?v=1" in content
+
     def test_existing_files_counted_as_skipped(self, tmp_path: Path):
         urls_path = _urls_file(tmp_path, ["https://example.com/article"])
         out_dir = tmp_path / "readings"
@@ -283,3 +294,15 @@ class TestGatedHostConfiguration:
         )
         assert result.returncode == 0, result.stderr
         assert "GATED" in result.stdout
+
+    def test_empty_gated_host_is_rejected(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            fetch_readings.ReadingRequest(
+                urls_file="urls.txt", gated_hosts=[""]
+            )
+
+    def test_whitespace_gated_host_is_rejected(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            fetch_readings.ReadingRequest(
+                urls_file="urls.txt", gated_hosts=["   "]
+            )

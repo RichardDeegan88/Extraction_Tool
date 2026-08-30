@@ -53,6 +53,7 @@ class _AcquireState:
     downloaded_pdfs: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     manual: list[ManualCaptureEntry] = field(default_factory=list)
+    videos: list[str] = field(default_factory=list)
     fetched_count: int = 0
     downloaded_pdfs_count: int = 0
     skipped_count: int = 0
@@ -248,8 +249,8 @@ class ReadingService:
         entries = self._collect_entries(request)
         return self._build_plan(entries, request)
 
-    def acquire_readings(self, request: ReadingRequest) -> ReadingResult:
-        """Acquire readings from a syllabus PDF or URLs file."""
+    def _validate_inputs(self, request: ReadingRequest) -> ReadingResult | None:
+        """Return an error result if inputs are missing/invalid, else None."""
         if request.source and not Path(request.source).is_file():
             return ReadingResult(
                 success=False,
@@ -260,6 +261,13 @@ class ReadingService:
                 success=False,
                 errors=[f"URLs file not found: {request.urls_file}"],
             )
+        return None
+
+    def acquire_readings(self, request: ReadingRequest) -> ReadingResult:
+        """Acquire readings from a syllabus PDF or URLs file."""
+        error = self._validate_inputs(request)
+        if error is not None:
+            return error
 
         plan = self.plan_readings(request)
         if plan.total_occurrences == 0:
@@ -281,7 +289,9 @@ class ReadingService:
         for planned in plan.entries:
             self._process_entry(request, planned, out_dir, pdf_dir, state)
 
-        _write_manual_capture(self._fs_repo, request, out_dir, state.manual)
+        _write_manual_capture(
+            self._fs_repo, request, out_dir, state.manual, state.videos
+        )
 
         return ReadingResult(
             success=True,
@@ -335,6 +345,7 @@ class ReadingService:
         """Record a video link."""
         state.videos_count += 1
         if not request.include_videos:
+            state.videos.append(planned.url)
             return
         target = out_dir / (self._repo.safe_filename(planned.url) + ".txt")
         if target.exists() and not request.overwrite:
@@ -602,25 +613,13 @@ def _format_manual_entry(entry: ManualCaptureEntry) -> list[str]:
     return lines
 
 
-def _write_manual_capture(
-    fs_repo: FilesystemRepository,
-    request: ReadingRequest,
-    out_dir: Path,
-    manual: list[ManualCaptureEntry],
-) -> None:
-    """Write the MANUAL_CAPTURE.txt report, separating retryable failures."""
-    manual_path = out_dir / "MANUAL_CAPTURE.txt"
+def _format_manual_sections(manual: list[ManualCaptureEntry]) -> list[str]:
+    """Render the manual-capture and technical-failure sections."""
     capture = [e for e in manual
                if e.failure_class not in _TECHNICAL_FAILURE_CLASSES]
     technical = [e for e in manual
                  if e.failure_class in _TECHNICAL_FAILURE_CLASSES]
-
-    lines = [
-        "=" * 72,
-        "READINGS THAT COULD NOT BE FETCHED AUTOMATICALLY",
-        "=" * 72,
-        "",
-    ]
+    lines: list[str] = []
     if capture:
         lines += [
             "MANUAL CAPTURE REQUIRED",
@@ -649,6 +648,32 @@ def _write_manual_capture(
     if not manual:
         lines.append("  (none - everything fetched successfully)")
         lines.append("")
+    return lines
+
+
+def _write_manual_capture(
+    fs_repo: FilesystemRepository,
+    request: ReadingRequest,
+    out_dir: Path,
+    manual: list[ManualCaptureEntry],
+    videos: list[str],
+) -> None:
+    """Write the MANUAL_CAPTURE.txt report, separating retryable failures.
+
+    Preserves the pre-refactor "VIDEOS" section so skipped video links are
+    still listed for direct viewing.
+    """
+    manual_path = out_dir / "MANUAL_CAPTURE.txt"
+    lines = [
+        "=" * 72,
+        "READINGS THAT COULD NOT BE FETCHED AUTOMATICALLY",
+        "=" * 72,
+        "",
+    ]
+    lines.extend(_format_manual_sections(manual))
+    if videos and not request.include_videos:
+        lines += ["", "VIDEOS (watch directly; not text)", ""]
+        lines += [f"  {url}" for url in videos]
     fs_repo.atomic_write_text(manual_path, "\n".join(lines) + "\n")
 
 

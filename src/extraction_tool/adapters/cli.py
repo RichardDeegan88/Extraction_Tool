@@ -190,12 +190,7 @@ def preprocess_pdf_main() -> None:
 def _build_fetch_readings_parser() -> argparse.ArgumentParser:
     """Return the ArgumentParser for fetch_readings."""
     ap = argparse.ArgumentParser(
-        description=(
-            "Extract reading URLs from a syllabus PDF and fetch them as text. "
-            "Exit codes: 0 = all non-video readings acquired or already present; "
-            "2 = partial (manual captures or recoverable failures); "
-            "1 = fatal, no URLs discovered, or all attempted retrievals failed."
-        )
+        description="Extract reading URLs from a syllabus PDF and fetch them as text."
     )
     ap.add_argument("pdf", nargs="?", help="syllabus / reading-list PDF")
     ap.add_argument("--urls", help="text file of URLs, one per line")
@@ -321,12 +316,8 @@ def _print_summary(result: ReadingResult, out_dir: str) -> None:
 
 
 def _exit_code_for_result(result: ReadingResult) -> int:
-    """Return the documented exit code for a finished acquisition run."""
-    if not result.success:
-        return 1
-    if result.manual_count or result.unexpected_errors:
-        return 2
-    return 0
+    """Return 0 on success, 1 on fatal failure (matches pre-refactor behavior)."""
+    return 0 if result.success else 1
 
 
 def fetch_readings_main() -> None:

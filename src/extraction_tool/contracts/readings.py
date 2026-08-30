@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 RequirementLevel = Literal["required", "recommended", "unknown"]
 ReadingCategory = Literal["article", "pdf", "video", "gated"]
@@ -155,6 +155,15 @@ class ReadingRequest(BaseModel):
         default_factory=list,
         description="Additional host substrings treated as gated sources",
     )
+
+    @field_validator("gated_hosts")
+    @classmethod
+    def _reject_empty_gated_hosts(cls, values: list[str]) -> list[str]:
+        """Empty substrings would match every host; reject them."""
+        for value in values:
+            if not value.strip():
+                raise ValueError("gated_hosts entries must be non-empty strings")
+        return values
 
 
 class ReadingResult(BaseModel):
